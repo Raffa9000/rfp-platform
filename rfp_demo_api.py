@@ -675,7 +675,7 @@ Provide your BID or NO BID recommendation with key reasoning.
             votes.append(vote)
             yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'vote', 'vote': vote})}\n\n"
         else:
-            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'claude-sonnet-4', 'error': claude_result.get('error')})}\n\n"
+            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'claude-sonnet-4', 'error': sanitize_error(str(claude_result.get('error', 'Unknown error')))})}\n\n"
 
         await asyncio.sleep(0.3)
 
@@ -689,7 +689,7 @@ Provide your BID or NO BID recommendation with key reasoning.
             votes.append(vote)
             yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'vote', 'vote': vote})}\n\n"
         else:
-            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'gpt-4o', 'error': gpt_result.get('error')})}\n\n"
+            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'gpt-4o', 'error': sanitize_error(str(gpt_result.get('error', 'Unknown error')))})}\n\n"
 
         await asyncio.sleep(0.3)
 
@@ -703,7 +703,7 @@ Provide your BID or NO BID recommendation with key reasoning.
             votes.append(vote)
             yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'vote', 'vote': vote})}\n\n"
         else:
-            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'grok-2', 'error': grok_result.get('error')})}\n\n"
+            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'grok-2', 'error': sanitize_error(str(grok_result.get('error', 'Unknown error')))})}\n\n"
 
         await asyncio.sleep(0.5)
 
