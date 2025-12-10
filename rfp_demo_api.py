@@ -328,6 +328,22 @@ CAPABILITIES = {
 # LLM INTEGRATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def sanitize_error(error_msg: str) -> str:
+    """Remove any API keys or sensitive data from error messages."""
+    import re
+    # Remove common API key patterns
+    patterns = [
+        r'sk-[a-zA-Z0-9_-]{20,}',  # OpenAI keys
+        r'sk-ant-[a-zA-Z0-9_-]{20,}',  # Anthropic keys
+        r'xai-[a-zA-Z0-9_-]{20,}',  # xAI keys
+        r'Bearer [a-zA-Z0-9_-]{20,}',  # Bearer tokens
+        r'x-api-key["\s:]+[a-zA-Z0-9_-]{20,}',  # x-api-key headers
+    ]
+    result = str(error_msg)
+    for pattern in patterns:
+        result = re.sub(pattern, '[REDACTED]', result, flags=re.IGNORECASE)
+    return result
+
 async def call_claude(prompt: str, system: str = None) -> Dict[str, Any]:
     """Call Claude API for analysis."""
     if not ANTHROPIC_API_KEY:
@@ -364,7 +380,7 @@ async def call_claude(prompt: str, system: str = None) -> Dict[str, Any]:
             else:
                 return {"error": f"API error: {resp.status_code}", "model": "claude-sonnet-4"}
         except Exception as e:
-            return {"error": str(e), "model": "claude-sonnet-4"}
+            return {"error": sanitize_error(str(e)), "model": "claude-sonnet-4"}
 
 
 async def call_openai(prompt: str, system: str = None) -> Dict[str, Any]:
@@ -402,7 +418,7 @@ async def call_openai(prompt: str, system: str = None) -> Dict[str, Any]:
             else:
                 return {"error": f"API error: {resp.status_code}", "model": "gpt-4o"}
         except Exception as e:
-            return {"error": str(e), "model": "gpt-4o"}
+            return {"error": sanitize_error(str(e)), "model": "gpt-4o"}
 
 
 async def call_grok(prompt: str, system: str = None) -> Dict[str, Any]:
@@ -440,7 +456,7 @@ async def call_grok(prompt: str, system: str = None) -> Dict[str, Any]:
             else:
                 return {"error": f"API error: {resp.status_code}", "model": "grok-2"}
         except Exception as e:
-            return {"error": str(e), "model": "grok-2"}
+            return {"error": sanitize_error(str(e)), "model": "grok-2"}
 
 
 def parse_vote(response: str) -> Dict[str, Any]:
