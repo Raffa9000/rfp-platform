@@ -1,0 +1,3650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atomic Trust - RFP Intelligence Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+
+  <script>
+    // ==================== LIVE API CONFIGURATION ====================
+    const API_BASE = '';
+    let liveApiConnected = false;
+
+    // Load live data from API on page load
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const statsRes = await fetch(`${API_BASE}/api/stats`);
+        if (statsRes.ok) {
+          const stats = await statsRes.json();
+          state.systemStats.totalDecisions = stats.total_decisions;
+          state.systemStats.accuracy = stats.accuracy;
+          state.systemStats.bidWinRate = stats.bid_win_rate;
+          state.systemStats.noBidAccuracy = stats.no_bid_accuracy;
+          state.systemStats.avgConfidence = stats.avg_confidence;
+        }
+
+        const rfpsRes = await fetch(`${API_BASE}/api/rfps`);
+        if (rfpsRes.ok) {
+          const rfps = await rfpsRes.json();
+          rfps.forEach(apiRfp => {
+            const local = scenarios.find(s => s.id === apiRfp.id);
+            if (local) {
+              local.consensus.phi = apiRfp.phi || local.consensus.phi;
+              local.consensus.psi = apiRfp.psi || local.consensus.psi;
+              local.consensus.delta = apiRfp.delta || local.consensus.delta;
+              local.consensus.confidence = apiRfp.confidence || local.consensus.confidence;
+            }
+          });
+        }
+        liveApiConnected = true;
+        console.log('Connected to live API at', API_BASE);
+        render();
+      } catch (e) {
+        console.log('Using simulated data', e.message);
+      }
+    });
+
+
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            atomic: {
+              50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd', 300: '#7dd3fc',
+              400: '#38bdf8', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1',
+              800: '#075985', 900: '#0c4a6e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+    .animate-slideIn { animation: slideIn 0.3s ease-out forwards; }
+    .gradient-text {
+      background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .tab-active { border-bottom: 2px solid #0ea5e9; color: #0ea5e9; }
+    .match-full { background: linear-gradient(90deg, #10b981 0%, #10b981 100%); }
+    .match-partial { background: linear-gradient(90deg, #10b981 0%, #10b981 var(--match), #fbbf24 var(--match), #fbbf24 100%); }
+    .match-gap { background: linear-gradient(90deg, #ef4444 0%, #ef4444 100%); }
+    @keyframes pulse-border {
+      0%, 100% { border-color: rgba(14, 165, 233, 0.3); }
+      50% { border-color: rgba(14, 165, 233, 0.8); }
+    }
+    .processing { animation: pulse-border 1.5s ease-in-out infinite; }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-slideUp { animation: slideUp 0.5s ease-out forwards; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+  
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-gradient-to-br from-atomic-500 to-atomic-700 rounded-xl flex items-center justify-center">
+          <span class="text-white font-bold text-lg">Δ</span>
+        </div>
+        <div>
+          <div class="font-semibold text-gray-900">Atomic Trust™</div>
+          <div class="text-xs text-gray-500">RFP Intelligence Platform</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <button onclick="showLiveIngestion()" class="px-4 py-2 text-sm font-medium text-white bg-atomic-500 hover:bg-atomic-600 rounded-lg transition-colors flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          Live Demo
+        </button>
+        <button onclick="showAnalyzeRfp()" class="px-4 py-2 text-sm font-medium text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+          Analyze RFP
+        </button>
+        <button onclick="showAnalytics()" class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          Analytics
+        </button>
+        <button onclick="showCapabilities()" class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          Capabilities
+        </button>
+        <span class="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">v4.0</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="app" class="max-w-7xl mx-auto px-6 py-8"></div>
+
+  <!-- Analytics Modal -->
+  <div id="analytics-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-6">
+    <div class="bg-white rounded-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900">Performance Analytics</h2>
+          <p class="text-sm text-gray-500">System learning and decision patterns</p>
+        </div>
+        <button onclick="hideAnalytics()" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+          <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-6" id="analytics-content"></div>
+    </div>
+  </div>
+
+  <!-- Capabilities Modal -->
+  <div id="capabilities-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-6">
+    <div class="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900">Capability Repository</h2>
+          <p class="text-sm text-gray-500">What we can deliver</p>
+        </div>
+        <button onclick="hideCapabilities()" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+          <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-6" id="capabilities-content"></div>
+    </div>
+  </div>
+
+  <!-- Live Ingestion Modal -->
+  <div id="live-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-gray-50 rounded-2xl max-w-7xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900">Live RFP Ingestion</h2>
+          <p class="text-sm text-gray-500">Watch the pipeline process incoming RFPs in real-time</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <button onclick="startIngestion()" id="start-btn" class="px-4 py-2 bg-atomic-500 hover:bg-atomic-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/></svg>
+            Start Demo
+          </button>
+          <button onclick="resetIngestion()" class="px-4 py-2 border border-gray-300 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+            Reset
+          </button>
+          <button onclick="hideLiveIngestion()" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto p-6" id="live-content"></div>
+    </div>
+  </div>
+
+  <!-- Analyze RFP Modal -->
+  <div id="analyze-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-gray-50 rounded-2xl max-w-7xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900">Real-Time RFP Analysis</h2>
+          <p class="text-sm text-gray-500">Select an RFP and watch the Multi-LLM Tribunal analyze it</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <div id="llm-status" class="flex items-center gap-2 text-xs">
+            <span class="px-2 py-1 rounded-full bg-gray-100 text-gray-500" id="status-claude">Claude</span>
+            <span class="px-2 py-1 rounded-full bg-gray-100 text-gray-500" id="status-gpt">GPT-4</span>
+            <span class="px-2 py-1 rounded-full bg-gray-100 text-gray-500" id="status-grok">Grok</span>
+          </div>
+          <button onclick="hideAnalyzeRfp()" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto p-6" id="analyze-content"></div>
+    </div>
+  </div>
+
+
+    <!-- RFP Viewer Modal with Tribunal Deliberation -->
+    <div id="rfp-viewer-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center">
+      <div class="bg-white rounded-2xl shadow-2xl w-[95vw] h-[90vh] max-w-7xl flex flex-col animate-fadeIn">
+        <!-- Header -->
+        <div class="flex items-center justify-between p-4 border-b border-gray-200">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-atomic-500 flex items-center justify-center">
+              <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900">RFP Document Viewer</h2>
+              <p class="text-sm text-gray-500">Atomic Trust™ Tribunal Deliberation</p>
+            </div>
+          </div>
+          <button onclick="hideRfpViewer()" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Content -->
+        <div id="rfp-viewer-content" class="flex-1 overflow-hidden">
+          <!-- Content rendered by JavaScript -->
+        </div>
+      </div>
+    </div>
+
+  <script>
+    // ==================== CAPABILITIES DATABASE ====================
+    const capabilities = {
+      'security-ops': {
+        id: 'security-ops',
+        name: '24/7 Security Operations Center',
+        category: 'Security',
+        maturity: 'Advanced',
+        description: 'Round-the-clock security monitoring with dedicated SOC analysts, SIEM integration, and incident response.',
+        evidence: ['SOC 2 Type II Report (2024)', '3 enterprise references', 'ISO 27001 certified'],
+        sla: '15-minute response for critical incidents',
+        capacity: 'Can support up to 50 concurrent clients',
+        keywords: ['soc', 'monitoring', '24/7', 'security operations', 'incident response']
+      },
+      'siem-integration': {
+        id: 'siem-integration',
+        name: 'SIEM Integration Services',
+        category: 'Integration',
+        maturity: 'Advanced',
+        description: 'Deep integration with major SIEM platforms including Splunk, QRadar, Sentinel, and Chronicle.',
+        evidence: ['Splunk Certified Partner', 'Microsoft Gold Partner', '20+ successful integrations'],
+        sla: '4-week standard integration timeline',
+        capacity: 'Unlimited',
+        keywords: ['siem', 'splunk', 'qradar', 'sentinel', 'integration', 'log management']
+      },
+      'compliance-soc2': {
+        id: 'compliance-soc2',
+        name: 'SOC 2 Compliance',
+        category: 'Compliance',
+        maturity: 'Advanced',
+        description: 'SOC 2 Type II certified with annual attestation. Full trust services criteria coverage.',
+        evidence: ['SOC 2 Type II Report', 'Clean opinion 3 consecutive years'],
+        sla: 'Annual attestation',
+        capacity: 'N/A',
+        keywords: ['soc 2', 'soc2', 'compliance', 'audit', 'attestation']
+      },
+      'compliance-hipaa': {
+        id: 'compliance-hipaa',
+        name: 'HIPAA Compliance',
+        category: 'Compliance',
+        maturity: 'Advanced',
+        description: 'HIPAA compliant infrastructure with BAA execution capability. PHI handling certified.',
+        evidence: ['HIPAA attestation', 'BAA template', '5 healthcare implementations'],
+        sla: 'BAA execution within 5 business days',
+        capacity: 'N/A',
+        keywords: ['hipaa', 'healthcare', 'phi', 'baa', 'medical']
+      },
+      'compliance-fedramp': {
+        id: 'compliance-fedramp',
+        name: 'FedRAMP Authorization',
+        category: 'Compliance',
+        maturity: 'In Progress',
+        description: 'FedRAMP Moderate authorization in progress. Expected completion Q3 2025.',
+        evidence: ['3PAO engaged', 'SSP submitted'],
+        sla: 'Target: Q3 2025',
+        capacity: 'N/A',
+        keywords: ['fedramp', 'federal', 'government', 'ato']
+      },
+      'compliance-gdpr': {
+        id: 'compliance-gdpr',
+        name: 'GDPR Compliance',
+        category: 'Compliance',
+        maturity: 'Advanced',
+        description: 'Full GDPR compliance with EU data residency options and DPA execution.',
+        evidence: ['GDPR compliance attestation', 'EU data centers', 'DPO appointed'],
+        sla: 'DPA execution within 3 business days',
+        capacity: 'N/A',
+        keywords: ['gdpr', 'eu', 'data residency', 'privacy', 'dpa']
+      },
+      'cloud-multi': {
+        id: 'cloud-multi',
+        name: 'Multi-Cloud Deployment',
+        category: 'Architecture',
+        maturity: 'Advanced',
+        description: 'Deploy across AWS, Azure, and GCP with consistent management and security posture.',
+        evidence: ['AWS Advanced Partner', 'Azure Gold Partner', 'GCP Partner'],
+        sla: 'Same-day provisioning',
+        capacity: 'Unlimited',
+        keywords: ['multi-cloud', 'aws', 'azure', 'gcp', 'cloud', 'hybrid']
+      },
+      'cloud-migration': {
+        id: 'cloud-migration',
+        name: 'Cloud Migration Services',
+        category: 'Services',
+        maturity: 'Advanced',
+        description: 'End-to-end cloud migration including assessment, planning, execution, and optimization.',
+        evidence: ['200+ migrations completed', 'Average 40% cost reduction'],
+        sla: 'Assessment within 2 weeks',
+        capacity: '10 concurrent migrations',
+        keywords: ['migration', 'cloud', 'lift and shift', 'modernization']
+      },
+      'data-analytics': {
+        id: 'data-analytics',
+        name: 'Healthcare Analytics Platform',
+        category: 'Products',
+        maturity: 'Advanced',
+        description: 'HIPAA-compliant analytics platform supporting HL7 FHIR R4, capable of processing 50M+ records.',
+        evidence: ['3 health system implementations', 'FHIR R4 certified', 'KLAS rated'],
+        sla: '99.9% uptime',
+        capacity: '50M+ patient records',
+        keywords: ['analytics', 'healthcare', 'fhir', 'hl7', 'patient data', 'predictive']
+      },
+      'sap-integration': {
+        id: 'sap-integration',
+        name: 'SAP Integration',
+        category: 'Integration',
+        maturity: 'Developing',
+        description: 'SAP integration capabilities through certified partner network.',
+        evidence: ['SAP Partner Network member', '2 S/4HANA implementations via partner'],
+        sla: 'Partner-dependent',
+        capacity: 'Limited - partner dependent',
+        keywords: ['sap', 's4hana', 'erp', 'enterprise']
+      },
+      'retail-pos': {
+        id: 'retail-pos',
+        name: 'Retail POS Integration',
+        category: 'Integration',
+        maturity: 'Advanced',
+        description: 'Integration with major POS systems including Oracle Retail, SAP Retail, NCR, and Square.',
+        evidence: ['15 retail implementations', '2,500+ store rollout experience'],
+        sla: 'Standard 8-week integration',
+        capacity: 'Unlimited stores',
+        keywords: ['pos', 'retail', 'point of sale', 'store', 'ncr', 'oracle retail']
+      },
+      'mobile-dev': {
+        id: 'mobile-dev',
+        name: 'Mobile App Development',
+        category: 'Development',
+        maturity: 'Advanced',
+        description: 'Native and cross-platform mobile development with enterprise MDM integration.',
+        evidence: ['50+ apps deployed', 'iOS and Android certified developers'],
+        sla: 'MVP in 8-12 weeks',
+        capacity: '5 concurrent projects',
+        keywords: ['mobile', 'app', 'ios', 'android', 'react native']
+      },
+      'agile-delivery': {
+        id: 'agile-delivery',
+        name: 'Agile Delivery Methodology',
+        category: 'Methodology',
+        maturity: 'Advanced',
+        description: 'Certified Agile/Scrum delivery with SAFe capabilities for enterprise scale.',
+        evidence: ['SAFe certified', '100% of projects use Agile', 'Avg velocity: 45 pts/sprint'],
+        sla: '2-week sprints standard',
+        capacity: 'Unlimited',
+        keywords: ['agile', 'scrum', 'safe', 'methodology', 'sprint']
+      },
+      'clearance-staff': {
+        id: 'clearance-staff',
+        name: 'Cleared Personnel',
+        category: 'Personnel',
+        maturity: 'Limited',
+        description: 'Staff with active security clearances for federal work.',
+        evidence: ['12 staff with Secret clearance', '3 staff with TS/SCI'],
+        sla: 'Clearance-dependent staffing',
+        capacity: '15 cleared resources',
+        keywords: ['clearance', 'secret', 'ts/sci', 'federal', 'classified']
+      },
+      'insurance-eo': {
+        id: 'insurance-eo',
+        name: 'E&O Insurance Coverage',
+        category: 'Risk',
+        maturity: 'Standard',
+        description: 'Professional liability and E&O insurance coverage.',
+        evidence: ['$25M E&O coverage', 'Certificate available'],
+        sla: 'Certificate within 24 hours',
+        capacity: 'N/A',
+        keywords: ['insurance', 'e&o', 'liability', 'errors and omissions']
+      },
+      'training-delivery': {
+        id: 'training-delivery',
+        name: 'Training & Enablement',
+        category: 'Services',
+        maturity: 'Advanced',
+        description: 'On-site and virtual training delivery with certified instructors.',
+        evidence: ['500+ training sessions delivered', 'NPS: 4.6/5'],
+        sla: 'Scheduling within 2 weeks',
+        capacity: '200 users per session',
+        keywords: ['training', 'enablement', 'onboarding', 'education']
+      }
+    };
+
+    // ==================== SCENARIOS ====================
+    const scenarios = [
+      {
+        id: 'security-services',
+        name: 'ACME Security Services RFP',
+        client: 'ACME Corporation',
+        industry: 'Manufacturing',
+        value: '$2.4M',
+        deadline: '45 days',
+        category: 'Cybersecurity',
+        difficulty: 'Medium',
+        submittedDate: '2024-09-15',
+        requirements: [
+          { id: 'REQ-001', text: 'Vendor shall provide 24/7 security operations center monitoring', type: 'SHALL', category: 'Security', capabilityMatch: 'security-ops', matchScore: 100 },
+          { id: 'REQ-002', text: 'Solution must integrate with existing SIEM infrastructure (Splunk)', type: 'MUST', category: 'Integration', capabilityMatch: 'siem-integration', matchScore: 100 },
+          { id: 'REQ-003', text: 'Vendor shall maintain SOC 2 Type II certification', type: 'SHALL', category: 'Compliance', capabilityMatch: 'compliance-soc2', matchScore: 100 },
+          { id: 'REQ-004', text: 'Response time for critical incidents must be under 15 minutes', type: 'MUST', category: 'SLA', capabilityMatch: 'security-ops', matchScore: 100 },
+          { id: 'REQ-005', text: 'Solution should support multi-cloud deployment (AWS/Azure)', type: 'SHOULD', category: 'Architecture', capabilityMatch: 'cloud-multi', matchScore: 100 },
+          { id: 'REQ-006', text: 'Data residency requirements must comply with GDPR', type: 'MUST', category: 'Compliance', capabilityMatch: 'compliance-gdpr', matchScore: 85, gap: 'Legal review needed for specific data flows' },
+        ],
+        votes: [
+          { model: 'Model A', verdict: 'BID', confidence: 0.82, rationale: 'Strong alignment with core security requirements. SOC 2 and SIEM integration are differentiators.' },
+          { model: 'Model B', verdict: 'BID', confidence: 0.71, rationale: 'Favorable terms. Multi-cloud is optional. Recommend clarifying incident response SLA.' },
+          { model: 'Model C', verdict: 'BID', confidence: 0.68, rationale: 'Competitive opportunity. GDPR requirement needs legal validation.' },
+          { model: 'Model D', verdict: 'CONDITIONAL', confidence: 0.54, rationale: 'GDPR data residency needs legal review. Otherwise strong fit.' },
+        ],
+        consensus: { verdict: 'BID', confidence: 0.73, phi: 0.687, psi: 0.731, delta: 0.044, phase: 'Stable', clarifications: ['Legal review for GDPR data flow compliance'] },
+        actualOutcome: 'WIN',
+        outcomeNotes: 'Won contract. Strong proposal on SOC integration. Client cited 24/7 coverage and Splunk expertise.',
+        similarRfps: ['cyber-insurance-2024', 'finserv-soc-2023'],
+        competitorIntel: 'Lost to us: SecureWorks (higher price), CrowdStrike (no SIEM integration)'
+      },
+      {
+        id: 'stategov-cloud',
+        name: 'StateGov Cloud Migration',
+        client: 'State Department of Revenue',
+        industry: 'Government',
+        value: '$8.7M',
+        deadline: '90 days',
+        category: 'Cloud Infrastructure',
+        difficulty: 'High',
+        submittedDate: '2024-10-01',
+        requirements: [
+          { id: 'REQ-001', text: 'Vendor must hold FedRAMP High authorization', type: 'MUST', category: 'Compliance', capabilityMatch: 'compliance-fedramp', matchScore: 30, gap: 'FedRAMP High not achieved - only Moderate in progress' },
+          { id: 'REQ-002', text: 'All data must remain within continental US borders', type: 'MUST', category: 'Data Sovereignty', capabilityMatch: 'cloud-multi', matchScore: 100 },
+          { id: 'REQ-003', text: 'Solution shall support migration of 500+ legacy applications', type: 'SHALL', category: 'Scope', capabilityMatch: 'cloud-migration', matchScore: 60, gap: 'Largest migration was 200 apps - scale risk' },
+          { id: 'REQ-004', text: 'Vendor must demonstrate 99.99% uptime SLA', type: 'MUST', category: 'SLA', capabilityMatch: 'cloud-multi', matchScore: 90, gap: 'Current SLA is 99.95%' },
+          { id: 'REQ-005', text: 'Staff must hold active Secret security clearances', type: 'MUST', category: 'Personnel', capabilityMatch: 'clearance-staff', matchScore: 40, gap: 'Only 12 cleared staff - project needs 30+' },
+          { id: 'REQ-006', text: 'Vendor shall provide 24-month warranty on all work', type: 'SHALL', category: 'Terms', capabilityMatch: null, matchScore: 100, gap: null },
+          { id: 'REQ-007', text: 'Solution must integrate with state identity management (Okta)', type: 'MUST', category: 'Integration', capabilityMatch: 'siem-integration', matchScore: 85 },
+        ],
+        votes: [
+          { model: 'Model A', verdict: 'NO-BID', confidence: 0.78, rationale: 'FedRAMP High authorization gap is disqualifying. 18-month timeline to obtain.' },
+          { model: 'Model B', verdict: 'NO-BID', confidence: 0.85, rationale: 'Security clearance requirement significantly limits available resources. Cannot staff.' },
+          { model: 'Model C', verdict: 'NO-BID', confidence: 0.72, rationale: 'Scope of 500+ applications exceeds proven capacity. Risk too high.' },
+          { model: 'Model D', verdict: 'NO-BID', confidence: 0.81, rationale: 'Multiple blocking requirements. Resource investment not justified.' },
+        ],
+        consensus: { verdict: 'NO-BID', confidence: 0.89, phi: 0.891, psi: 0.887, delta: 0.004, phase: 'Stable', clarifications: [] },
+        actualOutcome: 'CORRECT_NO_BID',
+        outcomeNotes: 'Competitor with FedRAMP High (Deloitte) won. Our decision validated.',
+        similarRfps: ['federal-cloud-2023'],
+        competitorIntel: 'Winner: Deloitte Federal. Also bid: Accenture Federal, Booz Allen.'
+      },
+      {
+        id: 'healthcare-analytics',
+        name: 'Regional Health Analytics Platform',
+        client: 'MidWest Health Consortium',
+        industry: 'Healthcare',
+        value: '$3.1M',
+        deadline: '60 days',
+        category: 'Healthcare IT',
+        difficulty: 'High',
+        submittedDate: '2024-08-20',
+        requirements: [
+          { id: 'REQ-001', text: 'Solution must be HIPAA compliant with BAA execution', type: 'MUST', category: 'Compliance', capabilityMatch: 'compliance-hipaa', matchScore: 100 },
+          { id: 'REQ-002', text: 'Platform shall support HL7 FHIR R4 data exchange', type: 'SHALL', category: 'Integration', capabilityMatch: 'data-analytics', matchScore: 100 },
+          { id: 'REQ-003', text: 'Vendor must have 3+ healthcare implementations in past 2 years', type: 'MUST', category: 'Experience', capabilityMatch: 'data-analytics', matchScore: 100 },
+          { id: 'REQ-004', text: 'Analytics must process 10M+ patient records', type: 'MUST', category: 'Scale', capabilityMatch: 'data-analytics', matchScore: 100 },
+          { id: 'REQ-005', text: 'Solution should include predictive modeling capabilities', type: 'SHOULD', category: 'Features', capabilityMatch: 'data-analytics', matchScore: 80, gap: 'Predictive models available but need customization' },
+          { id: 'REQ-006', text: 'Vendor shall provide on-site training for 200+ users', type: 'SHALL', category: 'Training', capabilityMatch: 'training-delivery', matchScore: 100 },
+        ],
+        votes: [
+          { model: 'Model A', verdict: 'BID', confidence: 0.65, rationale: 'HIPAA compliance in place. FHIR integration is proven. Good fit.' },
+          { model: 'Model B', verdict: 'CONDITIONAL', confidence: 0.58, rationale: 'Healthcare experience strong. Predictive modeling needs scoping.' },
+          { model: 'Model C', verdict: 'BID', confidence: 0.62, rationale: 'Technical requirements achievable. Training scope is standard.' },
+          { model: 'Model D', verdict: 'CONDITIONAL', confidence: 0.51, rationale: 'Recommend detailed scoping on predictive models before committing.' },
+        ],
+        consensus: { verdict: 'CONDITIONAL', confidence: 0.61, phi: 0.612, psi: 0.598, delta: 0.014, phase: 'Stable', clarifications: ['Scope predictive modeling requirements', 'Confirm FHIR R4 version compatibility'] },
+        actualOutcome: 'WIN',
+        outcomeNotes: 'Won after addressing clarifications. Predictive modeling scoped as Phase 2. Client valued healthcare experience.',
+        similarRfps: ['health-system-2023', 'pharma-analytics-2024'],
+        competitorIntel: 'Beat Epic (too expensive), Cerner (implementation timeline too long).'
+      },
+      {
+        id: 'bank-audit',
+        name: 'Global Bank Internal Audit System',
+        client: 'First Continental Bank',
+        industry: 'Financial Services',
+        value: '$5.2M',
+        deadline: '30 days',
+        category: 'Financial Services',
+        difficulty: 'Very High',
+        submittedDate: '2024-11-01',
+        requirements: [
+          { id: 'REQ-001', text: 'Vendor must be SOX compliant with annual attestation', type: 'MUST', category: 'Compliance', capabilityMatch: 'compliance-soc2', matchScore: 90, gap: 'SOC 2 covers most SOX requirements' },
+          { id: 'REQ-002', text: 'Solution shall integrate with SAP S/4HANA', type: 'SHALL', category: 'Integration', capabilityMatch: 'sap-integration', matchScore: 50, gap: 'SAP integration is partner-dependent, limited direct experience' },
+          { id: 'REQ-003', text: 'All development must occur onshore (US only)', type: 'MUST', category: 'Operations', capabilityMatch: null, matchScore: 70, gap: '30% of dev team is offshore - would need restructuring' },
+          { id: 'REQ-004', text: 'Vendor must carry $50M E&O insurance', type: 'MUST', category: 'Risk', capabilityMatch: 'insurance-eo', matchScore: 50, gap: 'Current coverage is $25M - would need to increase' },
+          { id: 'REQ-005', text: 'Implementation must complete within 6 months', type: 'MUST', category: 'Timeline', capabilityMatch: null, matchScore: 60, gap: 'Aggressive timeline given scope' },
+          { id: 'REQ-006', text: 'Solution must support real-time transaction monitoring', type: 'MUST', category: 'Features', capabilityMatch: null, matchScore: 40, gap: 'Would require new development' },
+          { id: 'REQ-007', text: 'Vendor shall provide source code escrow', type: 'SHALL', category: 'Terms', capabilityMatch: null, matchScore: 100 },
+          { id: 'REQ-008', text: 'Staff assigned must have financial services background', type: 'MUST', category: 'Personnel', capabilityMatch: null, matchScore: 75, gap: 'Some staff reallocation needed' },
+        ],
+        votes: [
+          { model: 'Model A', verdict: 'CONDITIONAL', confidence: 0.55, rationale: '$50M E&O requirement exceeds current coverage. Need insurance review and cost analysis.' },
+          { model: 'Model B', verdict: 'NO-BID', confidence: 0.62, rationale: '30-day response with 6-month implementation is aggressive. Resource conflict with Q1 projects.' },
+          { model: 'Model C', verdict: 'CONDITIONAL', confidence: 0.48, rationale: 'SAP integration requires certified partners. Timeline is primary risk.' },
+          { model: 'Model D', verdict: 'NO-BID', confidence: 0.71, rationale: 'Combination of insurance gap, timeline pressure, and onshore requirement creates unacceptable delivery risk.' },
+        ],
+        consensus: { verdict: 'NO-BID', confidence: 0.58, phi: 0.521, psi: 0.612, delta: 0.091, phase: 'Uncertain', clarifications: ['Insurance coverage gap is blocking', 'Timeline conflicts with existing commitments', 'SAP integration adds risk'] },
+        actualOutcome: 'VALIDATED_NO_BID',
+        outcomeNotes: 'Did not bid. Winner (IBM) later experienced major delivery delays and cost overruns. Decision validated.',
+        similarRfps: ['finserv-audit-2023'],
+        competitorIntel: 'Winner: IBM. Also bid: Accenture, KPMG. IBM struggling with delivery.'
+      },
+      {
+        id: 'retail-digital',
+        name: 'National Retailer Digital Transformation',
+        client: 'ShopMart Inc.',
+        industry: 'Retail',
+        value: '$12.5M',
+        deadline: '75 days',
+        category: 'Retail',
+        difficulty: 'Medium',
+        submittedDate: '2024-07-10',
+        requirements: [
+          { id: 'REQ-001', text: 'Solution must support 2,500+ store locations', type: 'MUST', category: 'Scale', capabilityMatch: 'retail-pos', matchScore: 100 },
+          { id: 'REQ-002', text: 'Platform shall integrate with existing POS systems (NCR)', type: 'SHALL', category: 'Integration', capabilityMatch: 'retail-pos', matchScore: 100 },
+          { id: 'REQ-003', text: 'Vendor must demonstrate retail sector experience', type: 'MUST', category: 'Experience', capabilityMatch: 'retail-pos', matchScore: 100 },
+          { id: 'REQ-004', text: 'Solution should include mobile app for store associates', type: 'SHOULD', category: 'Features', capabilityMatch: 'mobile-dev', matchScore: 100 },
+          { id: 'REQ-005', text: 'Implementation shall use agile methodology', type: 'SHALL', category: 'Methodology', capabilityMatch: 'agile-delivery', matchScore: 100 },
+          { id: 'REQ-006', text: 'Vendor must provide 3-year support agreement', type: 'MUST', category: 'Terms', capabilityMatch: null, matchScore: 100 },
+        ],
+        votes: [
+          { model: 'Model A', verdict: 'BID', confidence: 0.88, rationale: 'Strong retail experience. POS integration is proven capability. High win probability.' },
+          { model: 'Model B', verdict: 'BID', confidence: 0.82, rationale: 'Scale requirements well within capacity. Mobile app accelerator available.' },
+          { model: 'Model C', verdict: 'BID', confidence: 0.79, rationale: 'Agile delivery is standard practice. Good cultural fit with client.' },
+          { model: 'Model D', verdict: 'BID', confidence: 0.74, rationale: 'All requirements achievable. Recommend competitive pricing given market conditions.' },
+        ],
+        consensus: { verdict: 'BID', confidence: 0.87, phi: 0.871, psi: 0.863, delta: 0.008, phase: 'Stable', clarifications: [] },
+        actualOutcome: 'LOSS',
+        outcomeNotes: 'Lost on price. Competitor (Infosys) underbid by 22%. Technical evaluation was tied. Pricing strategy review needed.',
+        similarRfps: ['retail-omni-2023', 'grocery-digital-2024'],
+        competitorIntel: 'Winner: Infosys ($9.75M bid). Also bid: TCS, Wipro. All scored similarly on technical.'
+      },
+      {
+        id: 'insurance-claims',
+        name: 'P&C Insurance Claims Modernization',
+        client: 'Atlantic Insurance Group',
+        industry: 'Insurance',
+        value: '$4.8M',
+        deadline: '60 days',
+        category: 'Insurance',
+        difficulty: 'Medium',
+        submittedDate: '2024-06-15',
+        requirements: [
+          { id: 'REQ-001', text: 'Solution must integrate with Guidewire ClaimCenter', type: 'MUST', category: 'Integration', capabilityMatch: null, matchScore: 60, gap: 'Guidewire experience limited - 1 implementation' },
+          { id: 'REQ-002', text: 'Platform shall support automated claims triage using AI', type: 'SHALL', category: 'Features', capabilityMatch: 'data-analytics', matchScore: 70, gap: 'AI capability exists but not claims-specific' },
+          { id: 'REQ-003', text: 'Vendor must have P&C insurance domain experience', type: 'MUST', category: 'Experience', capabilityMatch: null, matchScore: 50, gap: 'Limited P&C experience - stronger in health' },
+          { id: 'REQ-004', text: 'Solution should reduce claims processing time by 40%', type: 'SHOULD', category: 'Outcomes', capabilityMatch: null, matchScore: 70, gap: 'Achievable but cannot guarantee' },
+          { id: 'REQ-005', text: 'Vendor shall provide dedicated account team', type: 'SHALL', category: 'Support', capabilityMatch: null, matchScore: 100 },
+        ],
+        votes: [
+          { model: 'Model A', verdict: 'CONDITIONAL', confidence: 0.52, rationale: 'Guidewire integration is feasible but unproven. Domain experience is a gap.' },
+          { model: 'Model B', verdict: 'NO-BID', confidence: 0.58, rationale: 'P&C insurance is not a strength. Better opportunities elsewhere.' },
+          { model: 'Model C', verdict: 'CONDITIONAL', confidence: 0.49, rationale: 'Could partner for Guidewire expertise. Risk is manageable with right approach.' },
+          { model: 'Model D', verdict: 'NO-BID', confidence: 0.63, rationale: 'Multiple gaps in a domain where we lack depth. Pass recommended.' },
+        ],
+        consensus: { verdict: 'NO-BID', confidence: 0.54, phi: 0.512, psi: 0.558, delta: 0.046, phase: 'Uncertain', clarifications: ['Guidewire expertise gap', 'P&C domain experience insufficient'] },
+        actualOutcome: 'CORRECT_NO_BID',
+        outcomeNotes: 'Did not bid. Duck Creek (insurance specialist) won. Right call - not our domain.',
+        similarRfps: [],
+        competitorIntel: 'Winner: Duck Creek Technologies. Specialist player.'
+      },
+      {
+        id: 'pharma-compliance',
+        name: 'Global Pharma GxP Compliance Platform',
+        client: 'MediCorp Pharmaceuticals',
+        industry: 'Life Sciences',
+        value: '$6.3M',
+        deadline: '90 days',
+        category: 'Life Sciences',
+        difficulty: 'High',
+        submittedDate: '2024-05-20',
+        requirements: [
+          { id: 'REQ-001', text: 'Solution must be 21 CFR Part 11 compliant', type: 'MUST', category: 'Compliance', capabilityMatch: null, matchScore: 80, gap: 'Compliant infrastructure but not FDA-validated' },
+          { id: 'REQ-002', text: 'Platform shall support electronic signatures with audit trail', type: 'SHALL', category: 'Features', capabilityMatch: null, matchScore: 90 },
+          { id: 'REQ-003', text: 'Vendor must have 5+ life sciences implementations', type: 'MUST', category: 'Experience', capabilityMatch: null, matchScore: 40, gap: 'Only 2 life sciences projects' },
+          { id: 'REQ-004', text: 'Solution must integrate with Veeva Vault', type: 'MUST', category: 'Integration', capabilityMatch: null, matchScore: 30, gap: 'No Veeva experience' },
+          { id: 'REQ-005', text: 'All validation documentation must be FDA-ready', type: 'MUST', category: 'Documentation', capabilityMatch: null, matchScore: 60, gap: 'Documentation templates exist but not FDA-specific' },
+          { id: 'REQ-006', text: 'Vendor shall support multi-language deployment (10+ languages)', type: 'SHALL', category: 'Localization', capabilityMatch: null, matchScore: 100 },
+        ],
+        votes: [
+          { model: 'Model A', verdict: 'NO-BID', confidence: 0.72, rationale: 'Veeva integration requirement and life sciences experience gap are blocking.' },
+          { model: 'Model B', verdict: 'NO-BID', confidence: 0.68, rationale: 'FDA validation requirements add significant overhead. Not our wheelhouse.' },
+          { model: 'Model C', verdict: 'CONDITIONAL', confidence: 0.45, rationale: 'Could partner with Veeva SI. High risk but high value opportunity.' },
+          { model: 'Model D', verdict: 'NO-BID', confidence: 0.75, rationale: 'Life sciences is specialized. Better to build capability before pursuing.' },
+        ],
+        consensus: { verdict: 'NO-BID', confidence: 0.71, phi: 0.698, psi: 0.712, delta: 0.014, phase: 'Stable', clarifications: [] },
+        actualOutcome: 'CORRECT_NO_BID',
+        outcomeNotes: 'Did not bid. IQVIA won. Right call - need to build life sciences practice first.',
+        similarRfps: [],
+        competitorIntel: 'Winner: IQVIA. Also bid: Cognizant Life Sciences.'
+      },
+      {
+        id: 'telecom-5g',
+        name: 'Regional Telecom 5G Network Operations',
+        client: 'ConnectUS Wireless',
+        industry: 'Telecommunications',
+        value: '$15.2M',
+        deadline: '120 days',
+        category: 'Telecommunications',
+        difficulty: 'Very High',
+        submittedDate: '2024-04-01',
+        requirements: [
+          { id: 'REQ-001', text: 'Vendor must have 5G network operations experience', type: 'MUST', category: 'Experience', capabilityMatch: null, matchScore: 20, gap: 'No 5G experience' },
+          { id: 'REQ-002', text: 'Solution shall integrate with Nokia and Ericsson RAN equipment', type: 'SHALL', category: 'Integration', capabilityMatch: null, matchScore: 10, gap: 'No telecom equipment integration experience' },
+          { id: 'REQ-003', text: 'Staff must include certified network engineers (CCIE)', type: 'MUST', category: 'Personnel', capabilityMatch: null, matchScore: 30, gap: 'Limited CCIE staff' },
+          { id: 'REQ-004', text: 'Vendor shall provide NOC services', type: 'SHALL', category: 'Services', capabilityMatch: 'security-ops', matchScore: 50, gap: 'SOC experience but not NOC-specific' },
+          { id: 'REQ-005', text: 'Solution must support network slicing management', type: 'MUST', category: 'Features', capabilityMatch: null, matchScore: 0, gap: 'No capability' },
+        ],
+        votes: [
+          { model: 'Model A', verdict: 'NO-BID', confidence: 0.92, rationale: 'Telecom is entirely outside our capability set. Hard pass.' },
+          { model: 'Model B', verdict: 'NO-BID', confidence: 0.95, rationale: 'Zero 5G experience, no RAN integration, no network slicing. Not remotely qualified.' },
+          { model: 'Model C', verdict: 'NO-BID', confidence: 0.88, rationale: 'Would need to acquire a telecom company to compete. Not viable.' },
+          { model: 'Model D', verdict: 'NO-BID', confidence: 0.91, rationale: 'Even with a partner strategy, gaps are too fundamental.' },
+        ],
+        consensus: { verdict: 'NO-BID', confidence: 0.95, phi: 0.951, psi: 0.948, delta: 0.003, phase: 'Stable', clarifications: [] },
+        actualOutcome: 'CORRECT_NO_BID',
+        outcomeNotes: 'Did not bid. Nokia Professional Services won. Obviously correct decision.',
+        similarRfps: [],
+        competitorIntel: 'Winner: Nokia Professional Services. Also bid: Ericsson, Tech Mahindra.'
+      }
+    ];
+
+    // ==================== STATE ====================
+    let state = {
+      view: 'dashboard',
+      selectedScenario: null,
+      activeTab: 'requirements',
+      isAnimating: false,
+      requirements: [],
+      votes: [],
+      consensus: null,
+      hashChain: [],
+      completedScenarios: ['security-services', 'stategov-cloud', 'healthcare-analytics', 'bank-audit', 'retail-digital', 'insurance-claims', 'pharma-compliance', 'telecom-5g'],
+      credentials: [
+        { model: 'Model A', omega: 0.72, history: [0.50, 0.53, 0.57, 0.61, 0.65, 0.68, 0.70, 0.72] },
+        { model: 'Model B', omega: 0.69, history: [0.50, 0.52, 0.55, 0.58, 0.62, 0.65, 0.67, 0.69] },
+        { model: 'Model C', omega: 0.61, history: [0.50, 0.51, 0.53, 0.55, 0.57, 0.58, 0.60, 0.61] },
+        { model: 'Model D', omega: 0.67, history: [0.50, 0.54, 0.57, 0.60, 0.63, 0.65, 0.66, 0.67] },
+      ],
+      systemStats: {
+        totalDecisions: 847,
+        accuracy: 0.76,
+        bidWinRate: 0.68,
+        noBidAccuracy: 0.94,
+        avgConfidence: 0.71,
+        accuracyHistory: [0.58, 0.62, 0.66, 0.69, 0.72, 0.74, 0.75, 0.76],
+        monthLabels: ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+        byIndustry: {
+          'Healthcare': { total: 45, wins: 34, accuracy: 0.82 },
+          'Financial Services': { total: 62, wins: 41, accuracy: 0.71 },
+          'Government': { total: 38, wins: 22, accuracy: 0.89 },
+          'Retail': { total: 54, wins: 38, accuracy: 0.65 },
+          'Manufacturing': { total: 41, wins: 29, accuracy: 0.78 }
+        },
+        byValue: {
+          'Under $1M': { total: 156, winRate: 0.72 },
+          '$1M - $5M': { total: 243, winRate: 0.68 },
+          '$5M - $10M': { total: 187, winRate: 0.61 },
+          'Over $10M': { total: 94, winRate: 0.52 }
+        }
+      }
+    };
+
+    // ==================== UTILITIES ====================
+    function generateHash(data) {
+      const str = JSON.stringify(data);
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) { hash = ((hash << 5) - hash) + str.charCodeAt(i); hash = hash & hash; }
+      return Math.abs(hash).toString(16).padStart(16, '0').slice(0, 12);
+    }
+
+    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+    function getVerdictColor(v) { return v === 'BID' ? 'text-emerald-600' : v === 'NO-BID' ? 'text-red-600' : 'text-amber-600'; }
+    function getVerdictBg(v) { return v === 'BID' ? 'bg-emerald-50 text-emerald-700' : v === 'NO-BID' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'; }
+    
+    function getOutcome(o) {
+      const map = {
+        'WIN': { text: 'Won', color: 'text-emerald-600', bg: 'bg-emerald-50', icon: '✓' },
+        'LOSS': { text: 'Lost', color: 'text-red-600', bg: 'bg-red-50', icon: '✗' },
+        'CORRECT_NO_BID': { text: 'Correct Pass', color: 'text-blue-600', bg: 'bg-blue-50', icon: '—' },
+        'VALIDATED_NO_BID': { text: 'Validated', color: 'text-blue-600', bg: 'bg-blue-50', icon: '—' }
+      };
+      return map[o] || { text: o, color: 'text-gray-600', bg: 'bg-gray-50', icon: '?' };
+    }
+
+    function getMatchColor(score) {
+      if (score >= 90) return { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Strong Match' };
+      if (score >= 70) return { bg: 'bg-emerald-50', text: 'text-emerald-600', label: 'Good Match' };
+      if (score >= 50) return { bg: 'bg-amber-50', text: 'text-amber-700', label: 'Partial' };
+      if (score >= 30) return { bg: 'bg-orange-50', text: 'text-orange-700', label: 'Weak' };
+      return { bg: 'bg-red-50', text: 'text-red-700', label: 'Gap' };
+    }
+
+    // ==================== NAVIGATION ====================
+    function selectScenario(id) {
+      state.selectedScenario = scenarios.find(s => s.id === id);
+      state.view = 'detail';
+      state.activeTab = 'requirements';
+      state.requirements = state.selectedScenario.requirements;
+      state.votes = state.selectedScenario.votes;
+      state.consensus = state.selectedScenario.consensus;
+      state.hashChain = [];
+      
+      // Build hash chain
+      state.votes.forEach((v, i) => {
+        const hash = generateHash({ ...v, seq: i });
+        const prev = state.hashChain.length > 0 ? state.hashChain[state.hashChain.length - 1].hash : 'genesis';
+        state.hashChain.push({ sequence: i, type: 'vote', model: v.model, hash, prevHash: prev.slice(0, 8) });
+      });
+      const cHash = generateHash(state.consensus);
+      state.hashChain.push({ sequence: state.hashChain.length, type: 'consensus', model: 'Tribunal', hash: cHash, prevHash: state.hashChain[state.hashChain.length - 1].hash.slice(0, 8) });
+      if (state.completedScenarios.includes(id)) {
+        const oHash = generateHash({ outcome: state.selectedScenario.actualOutcome });
+        state.hashChain.push({ sequence: state.hashChain.length, type: 'outcome', model: state.selectedScenario.actualOutcome, hash: oHash, prevHash: state.hashChain[state.hashChain.length - 1].hash.slice(0, 8) });
+      }
+      
+      render();
+    }
+
+    function setTab(tab) { state.activeTab = tab; render(); }
+    function goBack() { state.view = 'dashboard'; state.selectedScenario = null; render(); }
+
+    function showAnalytics() {
+      document.getElementById('analytics-modal').classList.remove('hidden');
+      document.getElementById('analytics-modal').classList.add('flex');
+      renderAnalytics();
+    }
+    function hideAnalytics() {
+      document.getElementById('analytics-modal').classList.add('hidden');
+      document.getElementById('analytics-modal').classList.remove('flex');
+    }
+    function showCapabilities() {
+      document.getElementById('capabilities-modal').classList.remove('hidden');
+      document.getElementById('capabilities-modal').classList.add('flex');
+      renderCapabilities();
+    }
+    function hideCapabilities() {
+      document.getElementById('capabilities-modal').classList.add('hidden');
+      document.getElementById('capabilities-modal').classList.remove('flex');
+    }
+
+    // ==================== RENDER FUNCTIONS ====================
+    function renderAnalytics() {
+      const el = document.getElementById('analytics-content');
+      el.innerHTML = `
+        <div class="grid grid-cols-4 gap-4 mb-8">
+          <div class="bg-gradient-to-br from-atomic-500 to-atomic-700 rounded-xl p-5 text-white">
+            <div class="text-atomic-200 text-sm mb-1">System Accuracy</div>
+            <div class="text-3xl font-bold">${(state.systemStats.accuracy * 100).toFixed(0)}%</div>
+            <div class="text-atomic-200 text-xs mt-1">↑ 18pts from baseline</div>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-5">
+            <div class="text-gray-500 text-sm mb-1">Total Decisions</div>
+            <div class="text-3xl font-bold text-gray-900">${state.systemStats.totalDecisions}</div>
+            <div class="text-gray-400 text-xs mt-1">Since May 2024</div>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-5">
+            <div class="text-gray-500 text-sm mb-1">Bid Win Rate</div>
+            <div class="text-3xl font-bold text-emerald-600">${(state.systemStats.bidWinRate * 100).toFixed(0)}%</div>
+            <div class="text-gray-400 text-xs mt-1">When we bid, we win</div>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-5">
+            <div class="text-gray-500 text-sm mb-1">No-Bid Accuracy</div>
+            <div class="text-3xl font-bold text-blue-600">${(state.systemStats.noBidAccuracy * 100).toFixed(0)}%</div>
+            <div class="text-gray-400 text-xs mt-1">Correct passes</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-6 mb-8">
+          <div class="bg-white border border-gray-200 rounded-xl p-6">
+            <h3 class="font-semibold text-gray-900 mb-4">Accuracy Over Time</h3>
+            <canvas id="accuracy-chart" height="180"></canvas>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-6">
+            <h3 class="font-semibold text-gray-900 mb-4">Model Credential Evolution</h3>
+            <canvas id="credentials-chart" height="180"></canvas>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-6">
+          <div class="bg-white border border-gray-200 rounded-xl p-6">
+            <h3 class="font-semibold text-gray-900 mb-4">Performance by Industry</h3>
+            <div class="space-y-3">
+              ${Object.entries(state.systemStats.byIndustry).map(([ind, data]) => `
+                <div class="flex items-center justify-between">
+                  <span class="text-gray-700">${ind}</span>
+                  <div class="flex items-center gap-3">
+                    <div class="w-32 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div class="h-full bg-atomic-500 rounded-full" style="width: ${data.accuracy * 100}%"></div>
+                    </div>
+                    <span class="text-sm font-medium text-gray-900 w-12 text-right">${(data.accuracy * 100).toFixed(0)}%</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-6">
+            <h3 class="font-semibold text-gray-900 mb-4">Win Rate by Deal Size</h3>
+            <div class="space-y-3">
+              ${Object.entries(state.systemStats.byValue).map(([range, data]) => `
+                <div class="flex items-center justify-between">
+                  <span class="text-gray-700">${range}</span>
+                  <div class="flex items-center gap-3">
+                    <div class="w-32 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div class="h-full bg-emerald-500 rounded-full" style="width: ${data.winRate * 100}%"></div>
+                    </div>
+                    <span class="text-sm font-medium text-gray-900 w-12 text-right">${(data.winRate * 100).toFixed(0)}%</span>
+                    <span class="text-xs text-gray-400 w-16">(${data.total} RFPs)</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 p-4 bg-atomic-50 rounded-xl">
+          <p class="text-atomic-800 text-center">
+            <span class="font-semibold">Key Insight:</span> The system has learned to be more selective on large deals ($10M+), 
+            where our historical win rate is lower. No-bid recommendations for deals outside our sweet spot have 94% accuracy.
+          </p>
+        </div>
+      `;
+
+      setTimeout(() => {
+        new Chart(document.getElementById('accuracy-chart'), {
+          type: 'line',
+          data: {
+            labels: state.systemStats.monthLabels,
+            datasets: [{
+              label: 'Accuracy',
+              data: state.systemStats.accuracyHistory.map(v => v * 100),
+              borderColor: '#0ea5e9',
+              backgroundColor: 'rgba(14, 165, 233, 0.1)',
+              fill: true,
+              tension: 0.4
+            }]
+          },
+          options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min: 50, max: 100, ticks: { callback: v => v + '%' } } } }
+        });
+
+        new Chart(document.getElementById('credentials-chart'), {
+          type: 'line',
+          data: {
+            labels: state.systemStats.monthLabels,
+            datasets: state.credentials.map((c, i) => ({
+              label: c.model,
+              data: c.history.map(v => v * 100),
+              borderColor: ['#0ea5e9', '#8b5cf6', '#f59e0b', '#10b981'][i],
+              tension: 0.4,
+              fill: false
+            }))
+          },
+          options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { min: 40, max: 80, ticks: { callback: v => v + '%' } } } }
+        });
+      }, 100);
+    }
+
+    function renderCapabilities() {
+      const el = document.getElementById('capabilities-content');
+      const categories = [...new Set(Object.values(capabilities).map(c => c.category))];
+      
+      el.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-6">
+          <div class="bg-emerald-50 rounded-xl p-4 text-center">
+            <div class="text-2xl font-bold text-emerald-700">${Object.values(capabilities).filter(c => c.maturity === 'Advanced').length}</div>
+            <div class="text-sm text-emerald-600">Advanced</div>
+          </div>
+          <div class="bg-amber-50 rounded-xl p-4 text-center">
+            <div class="text-2xl font-bold text-amber-700">${Object.values(capabilities).filter(c => c.maturity === 'Developing' || c.maturity === 'In Progress').length}</div>
+            <div class="text-sm text-amber-600">Developing</div>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-4 text-center">
+            <div class="text-2xl font-bold text-gray-700">${Object.values(capabilities).filter(c => c.maturity === 'Limited' || c.maturity === 'Standard').length}</div>
+            <div class="text-sm text-gray-600">Limited/Standard</div>
+          </div>
+        </div>
+        
+        ${categories.map(cat => `
+          <div class="mb-6">
+            <h3 class="font-semibold text-gray-900 mb-3">${cat}</h3>
+            <div class="grid grid-cols-1 gap-3">
+              ${Object.values(capabilities).filter(c => c.category === cat).map(cap => `
+                <div class="border border-gray-200 rounded-xl p-4 hover:border-atomic-300 transition-colors">
+                  <div class="flex items-start justify-between mb-2">
+                    <div class="font-medium text-gray-900">${cap.name}</div>
+                    <span class="px-2 py-1 rounded text-xs font-medium ${
+                      cap.maturity === 'Advanced' ? 'bg-emerald-50 text-emerald-700' :
+                      cap.maturity === 'Developing' || cap.maturity === 'In Progress' ? 'bg-amber-50 text-amber-700' :
+                      'bg-gray-100 text-gray-600'
+                    }">${cap.maturity}</span>
+                  </div>
+                  <p class="text-sm text-gray-600 mb-3">${cap.description}</p>
+                  <div class="flex flex-wrap gap-2">
+                    ${cap.evidence.map(e => `<span class="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">${e}</span>`).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('')}
+      `;
+    }
+
+    function render() {
+      const app = document.getElementById('app');
+
+      if (state.view === 'dashboard') {
+        app.innerHTML = renderDashboard();
+      } else if (state.view === 'detail') {
+        app.innerHTML = renderDetail();
+      }
+    }
+
+    function renderDashboard() {
+      const stats = state.systemStats;
+      const recentWins = scenarios.filter(s => s.actualOutcome === 'WIN').length;
+      const recentNoBids = scenarios.filter(s => ['CORRECT_NO_BID', 'VALIDATED_NO_BID'].includes(s.actualOutcome)).length;
+      
+      return `
+        <div class="mb-8">
+          <h1 class="text-2xl font-bold text-gray-900 mb-2">RFP Intelligence Dashboard</h1>
+          <p class="text-gray-500">Analyze opportunities with AI-powered governance</p>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-5 gap-4 mb-8">
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="text-sm text-gray-500 mb-1">Pending</div>
+            <div class="text-2xl font-bold text-gray-900">12</div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="text-sm text-gray-500 mb-1">This Quarter</div>
+            <div class="text-2xl font-bold text-gray-900">47</div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="text-sm text-gray-500 mb-1">Win Rate</div>
+            <div class="text-2xl font-bold text-emerald-600">${(stats.bidWinRate * 100).toFixed(0)}%</div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="text-sm text-gray-500 mb-1">Avg Confidence</div>
+            <div class="text-2xl font-bold text-atomic-600">${(stats.avgConfidence * 100).toFixed(0)}%</div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="text-sm text-gray-500 mb-1">System Accuracy</div>
+            <div class="text-2xl font-bold text-atomic-600">${(stats.accuracy * 100).toFixed(0)}%</div>
+          </div>
+        </div>
+
+        <!-- RFP List -->
+        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 class="font-semibold text-gray-900">Recent RFPs</h2>
+            <div class="flex gap-2">
+              <span class="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">${recentWins} Won</span>
+              <span class="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">${recentNoBids} Correct Pass</span>
+              <span class="px-3 py-1 bg-red-50 text-red-700 rounded-full text-xs font-medium">${scenarios.filter(s => s.actualOutcome === 'LOSS').length} Lost</span>
+            </div>
+          </div>
+          <div class="divide-y divide-gray-100">
+            ${scenarios.map(s => {
+              const outcome = getOutcome(s.actualOutcome);
+              const isCompleted = state.completedScenarios.includes(s.id);
+              const avgMatch = Math.round(s.requirements.reduce((sum, r) => sum + r.matchScore, 0) / s.requirements.length);
+              
+              return `
+                <div onclick="selectScenario('${s.id}')" class="px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                      <div class="w-10 h-10 rounded-xl ${outcome.bg} flex items-center justify-center font-semibold ${outcome.color}">
+                        ${outcome.icon}
+                      </div>
+                      <div>
+                        <div class="font-medium text-gray-900">${s.name}</div>
+                        <div class="text-sm text-gray-500">${s.client} • ${s.industry}</div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-6">
+                      <div class="text-right">
+                        <div class="font-semibold text-gray-900">${s.value}</div>
+                        <div class="text-xs text-gray-400">${s.deadline}</div>
+                      </div>
+                      <div class="w-24 text-center">
+                        <div class="text-sm font-medium ${getMatchColor(avgMatch).text}">${avgMatch}%</div>
+                        <div class="text-xs text-gray-400">Capability</div>
+                      </div>
+                      <div class="w-24 text-center">
+                        <span class="px-3 py-1 rounded-full text-sm font-medium ${getVerdictBg(s.consensus.verdict)}">${s.consensus.verdict}</span>
+                      </div>
+                      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderDetail() {
+      const s = state.selectedScenario;
+      const outcome = getOutcome(s.actualOutcome);
+      const isCompleted = state.completedScenarios.includes(s.id);
+      const avgMatch = Math.round(s.requirements.reduce((sum, r) => sum + r.matchScore, 0) / s.requirements.length);
+      const strongMatches = s.requirements.filter(r => r.matchScore >= 80).length;
+      const gaps = s.requirements.filter(r => r.matchScore < 50).length;
+
+      return `
+        <!-- Back -->
+        <button onclick="goBack()" class="flex items-center gap-2 text-gray-500 hover:text-gray-700 mb-6 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          Back to Dashboard
+        </button>
+
+        <!-- Header -->
+        <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <div class="flex items-center gap-3 mb-2">
+                <h1 class="text-xl font-bold text-gray-900">${s.name}</h1>
+                ${isCompleted ? `<span class="px-3 py-1 ${outcome.bg} ${outcome.color} rounded-full text-sm font-medium">${outcome.text}</span>` : ''}
+              </div>
+              <p class="text-gray-500">${s.client} • ${s.industry}</p>
+            </div>
+            <div class="text-right">
+              <div class="text-2xl font-bold text-gray-900">${s.value}</div>
+              <div class="text-sm text-gray-500">${s.deadline} response</div>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-4 gap-4 pt-4 border-t border-gray-100">
+            <div>
+              <div class="text-sm text-gray-500 mb-1">Capability Match</div>
+              <div class="text-lg font-semibold ${getMatchColor(avgMatch).text}">${avgMatch}%</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-500 mb-1">Strong Matches</div>
+              <div class="text-lg font-semibold text-emerald-600">${strongMatches} of ${s.requirements.length}</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-500 mb-1">Gaps Identified</div>
+              <div class="text-lg font-semibold ${gaps > 0 ? 'text-red-600' : 'text-gray-400'}">${gaps}</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-500 mb-1">Recommendation</div>
+              <div class="text-lg font-semibold ${getVerdictColor(s.consensus.verdict)}">${s.consensus.verdict} (${(s.consensus.confidence * 100).toFixed(0)}%)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-1 mb-6 border-b border-gray-200">
+          ${['requirements', 'tribunal', 'similar', 'audit'].map(tab => `
+            <button onclick="setTab('${tab}')" class="px-4 py-3 text-sm font-medium transition-colors ${state.activeTab === tab ? 'tab-active' : 'text-gray-500 hover:text-gray-700'}">
+              ${{ requirements: 'Requirements & Gaps', tribunal: 'Tribunal Analysis', similar: 'Similar RFPs', audit: 'Audit Trail' }[tab]}
+            </button>
+          `).join('')}
+        </div>
+
+        <div class="grid grid-cols-3 gap-6">
+          <!-- Main Content -->
+          <div class="col-span-2">
+            ${state.activeTab === 'requirements' ? renderRequirementsTab(s) : ''}
+            ${state.activeTab === 'tribunal' ? renderTribunalTab(s) : ''}
+            ${state.activeTab === 'similar' ? renderSimilarTab(s) : ''}
+            ${state.activeTab === 'audit' ? renderAuditTab(s) : ''}
+          </div>
+
+          <!-- Sidebar -->
+          <div class="space-y-6">
+            <!-- Verdict Card -->
+            <div class="bg-gradient-to-br from-atomic-500 to-atomic-700 rounded-xl p-5 text-white">
+              <div class="text-atomic-200 text-sm mb-1">Tribunal Verdict</div>
+              <div class="text-3xl font-bold mb-1">${s.consensus.verdict}</div>
+              <div class="text-atomic-200 text-sm mb-4">${(s.consensus.confidence * 100).toFixed(0)}% confidence • ${s.consensus.phase}</div>
+              <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                <div class="bg-white/10 rounded-lg p-2">
+                  <div class="text-atomic-200">Φ</div>
+                  <div class="font-mono">${s.consensus.phi.toFixed(3)}</div>
+                </div>
+                <div class="bg-white/10 rounded-lg p-2">
+                  <div class="text-atomic-200">Ψ</div>
+                  <div class="font-mono">${s.consensus.psi.toFixed(3)}</div>
+                </div>
+                <div class="bg-white/10 rounded-lg p-2">
+                  <div class="text-atomic-200">Δ</div>
+                  <div class="font-mono">${s.consensus.delta.toFixed(3)}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Model Votes Summary -->
+            <div class="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 class="font-semibold text-gray-900 mb-3">Model Votes</h3>
+              <div class="space-y-2">
+                ${s.votes.map(v => `
+                  <div class="flex items-center justify-between py-2">
+                    <span class="text-gray-700">${v.model}</span>
+                    <span class="font-medium ${getVerdictColor(v.verdict)}">${v.verdict}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Outcome -->
+            ${isCompleted ? `
+              <div class="bg-gray-50 rounded-xl p-5">
+                <h3 class="font-semibold text-gray-900 mb-2">Outcome</h3>
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="w-8 h-8 ${outcome.bg} rounded-lg flex items-center justify-center ${outcome.color} font-semibold">${outcome.icon}</span>
+                  <span class="font-medium ${outcome.color}">${outcome.text}</span>
+                </div>
+                <p class="text-sm text-gray-600">${s.outcomeNotes}</p>
+              </div>
+            ` : ''}
+
+            <!-- Competitor Intel -->
+            ${s.competitorIntel ? `
+              <div class="bg-white rounded-xl border border-gray-200 p-5">
+                <h3 class="font-semibold text-gray-900 mb-2">Competitive Intel</h3>
+                <p class="text-sm text-gray-600">${s.competitorIntel}</p>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderRequirementsTab(s) {
+      return `
+        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-100">
+            <h3 class="font-semibold text-gray-900">Requirements & Capability Analysis</h3>
+            <p class="text-sm text-gray-500">How our capabilities match each requirement</p>
+          </div>
+          <div class="divide-y divide-gray-100">
+            ${s.requirements.map(req => {
+              const match = getMatchColor(req.matchScore);
+              const cap = req.capabilityMatch ? capabilities[req.capabilityMatch] : null;
+              
+              return `
+                <div class="p-6">
+                  <div class="flex items-start justify-between mb-3">
+                    <div class="flex items-start gap-3">
+                      <span class="text-xs font-mono text-gray-400 mt-1">${req.id}</span>
+                      <div>
+                        <p class="text-gray-900">${req.text}</p>
+                        <div class="flex gap-2 mt-2">
+                          <span class="px-2 py-0.5 rounded text-xs font-medium ${
+                            req.type === 'MUST' ? 'bg-red-50 text-red-700' :
+                            req.type === 'SHALL' ? 'bg-amber-50 text-amber-700' :
+                            'bg-gray-100 text-gray-600'
+                          }">${req.type}</span>
+                          <span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">${req.category}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div class="w-16 h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div class="h-full rounded-full ${req.matchScore >= 70 ? 'bg-emerald-500' : req.matchScore >= 50 ? 'bg-amber-500' : 'bg-red-500'}" style="width: ${req.matchScore}%"></div>
+                      </div>
+                      <span class="text-sm font-medium ${match.text} w-12 text-right">${req.matchScore}%</span>
+                    </div>
+                  </div>
+                  
+                  ${cap || req.gap ? `
+                    <div class="ml-8 mt-3 p-3 ${match.bg} rounded-lg">
+                      ${cap ? `
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="text-xs font-medium ${match.text}">Matched Capability:</span>
+                          <span class="text-sm text-gray-900">${cap.name}</span>
+                          <span class="px-1.5 py-0.5 ${cap.maturity === 'Advanced' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'} rounded text-xs">${cap.maturity}</span>
+                        </div>
+                        ${cap.evidence ? `<div class="text-xs text-gray-600">Evidence: ${cap.evidence.slice(0, 2).join(', ')}</div>` : ''}
+                      ` : ''}
+                      ${req.gap ? `
+                        <div class="flex items-start gap-1 mt-2">
+                          <svg class="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                          </svg>
+                          <span class="text-sm text-gray-700"><span class="font-medium">Gap:</span> ${req.gap}</span>
+                        </div>
+                      ` : ''}
+                    </div>
+                  ` : `
+                    <div class="ml-8 mt-3 p-3 bg-emerald-50 rounded-lg">
+                      <span class="text-sm text-emerald-700">✓ Full capability coverage</span>
+                    </div>
+                  `}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        ${s.consensus.clarifications.length > 0 ? `
+          <div class="mt-6 bg-amber-50 rounded-xl p-5">
+            <h3 class="font-semibold text-amber-800 mb-3 flex items-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              Items Requiring Clarification
+            </h3>
+            <ul class="space-y-2">
+              ${s.consensus.clarifications.map(c => `<li class="text-amber-700 text-sm">• ${c}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+      `;
+    }
+
+    function renderTribunalTab(s) {
+      return `
+        <div class="space-y-4">
+          ${s.votes.map(vote => {
+            const cred = state.credentials.find(c => c.model === vote.model);
+            return `
+              <div class="bg-white rounded-xl border border-gray-200 p-5">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-atomic-100 rounded-xl flex items-center justify-center">
+                      <span class="text-atomic-600 font-semibold">${vote.model.slice(-1)}</span>
+                    </div>
+                    <div>
+                      <div class="font-medium text-gray-900">${vote.model}</div>
+                      <div class="text-sm text-gray-500">ω = ${cred?.omega.toFixed(2)} • ${cred?.history.length * 100}+ decisions</div>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="font-semibold text-lg ${getVerdictColor(vote.verdict)}">${vote.verdict}</div>
+                    <div class="text-sm text-gray-500">${(vote.confidence * 100).toFixed(0)}% confidence</div>
+                  </div>
+                </div>
+                <div class="bg-gray-50 rounded-lg p-4">
+                  <p class="text-gray-700">"${vote.rationale}"</p>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <div class="mt-6 bg-white rounded-xl border border-gray-200 p-5">
+          <h3 class="font-semibold text-gray-900 mb-4">Consensus Computation</h3>
+          <div class="grid grid-cols-2 gap-6">
+            <div>
+              <div class="text-sm text-gray-500 mb-2">Democratic Centroid (Φ)</div>
+              <p class="text-sm text-gray-600 mb-2">Unweighted average of all model votes. Each model counts equally regardless of track record.</p>
+              <div class="text-2xl font-mono font-semibold text-atomic-600">${s.consensus.phi.toFixed(3)}</div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-500 mb-2">Weighted Centroid (Ψ)</div>
+              <p class="text-sm text-gray-600 mb-2">Votes weighted by credential (ω). Models with proven accuracy have more influence.</p>
+              <div class="text-2xl font-mono font-semibold text-atomic-600">${s.consensus.psi.toFixed(3)}</div>
+            </div>
+          </div>
+          <div class="mt-4 pt-4 border-t border-gray-100">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-sm text-gray-500 mb-1">Divergence (Δ = |Ψ - Φ|)</div>
+                <p class="text-sm text-gray-600">Low divergence = stable consensus. High divergence = experienced models disagree with novices.</p>
+              </div>
+              <div class="text-right">
+                <div class="text-2xl font-mono font-semibold ${s.consensus.delta < 0.05 ? 'text-emerald-600' : s.consensus.delta < 0.1 ? 'text-amber-600' : 'text-red-600'}">${s.consensus.delta.toFixed(3)}</div>
+                <div class="text-sm text-gray-500">${s.consensus.phase}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSimilarTab(s) {
+      const similar = scenarios.filter(sc => s.similarRfps?.includes(sc.id) || (sc.industry === s.industry && sc.id !== s.id)).slice(0, 3);
+      
+      return `
+        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-100">
+            <h3 class="font-semibold text-gray-900">Similar Historical RFPs</h3>
+            <p class="text-sm text-gray-500">Based on industry, requirements, and client profile</p>
+          </div>
+          ${similar.length > 0 ? `
+            <div class="divide-y divide-gray-100">
+              ${similar.map(sim => {
+                const simOutcome = getOutcome(sim.actualOutcome);
+                return `
+                  <div class="p-6">
+                    <div class="flex items-start justify-between mb-3">
+                      <div>
+                        <div class="font-medium text-gray-900">${sim.name}</div>
+                        <div class="text-sm text-gray-500">${sim.client} • ${sim.value}</div>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <span class="px-2 py-1 ${getVerdictBg(sim.consensus.verdict)} rounded text-xs font-medium">${sim.consensus.verdict}</span>
+                        <span class="px-2 py-1 ${simOutcome.bg} ${simOutcome.color} rounded text-xs font-medium">${simOutcome.text}</span>
+                      </div>
+                    </div>
+                    <p class="text-sm text-gray-600 mb-3">${sim.outcomeNotes}</p>
+                    <div class="text-xs text-gray-400">Confidence: ${(sim.consensus.confidence * 100).toFixed(0)}%</div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          ` : `
+            <div class="p-6 text-center text-gray-500">
+              No similar RFPs found in history
+            </div>
+          `}
+        </div>
+
+        <div class="mt-6 bg-white rounded-xl border border-gray-200 p-6">
+          <h3 class="font-semibold text-gray-900 mb-4">Industry Performance</h3>
+          <div class="grid grid-cols-3 gap-4">
+            <div class="text-center p-4 bg-gray-50 rounded-xl">
+              <div class="text-2xl font-bold text-gray-900">${state.systemStats.byIndustry[s.industry]?.total || 'N/A'}</div>
+              <div class="text-sm text-gray-500">Total in ${s.industry}</div>
+            </div>
+            <div class="text-center p-4 bg-emerald-50 rounded-xl">
+              <div class="text-2xl font-bold text-emerald-600">${state.systemStats.byIndustry[s.industry]?.wins || 'N/A'}</div>
+              <div class="text-sm text-gray-500">Wins</div>
+            </div>
+            <div class="text-center p-4 bg-atomic-50 rounded-xl">
+              <div class="text-2xl font-bold text-atomic-600">${((state.systemStats.byIndustry[s.industry]?.accuracy || 0) * 100).toFixed(0)}%</div>
+              <div class="text-sm text-gray-500">Accuracy</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 p-4 bg-atomic-50 rounded-xl">
+          <p class="text-sm text-atomic-800">
+            <span class="font-semibold">Pattern Insight:</span> In ${s.industry}, our win rate improves significantly when capability match exceeds 75%. 
+            This RFP has ${Math.round(s.requirements.reduce((sum, r) => sum + r.matchScore, 0) / s.requirements.length)}% average match.
+          </p>
+        </div>
+      `;
+    }
+
+    function renderAuditTab(s) {
+      return `
+        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div>
+              <h3 class="font-semibold text-gray-900">Cryptographic Audit Trail</h3>
+              <p class="text-sm text-gray-500">Immutable record of all tribunal activity</p>
+            </div>
+            <span class="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+              </svg>
+              Chain Verified
+            </span>
+          </div>
+          <div class="divide-y divide-gray-100">
+            ${state.hashChain.map((record, i) => `
+              <div class="px-6 py-4">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center gap-3">
+                    <span class="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center text-xs font-mono text-gray-500">${i}</span>
+                    <span class="px-2 py-1 rounded text-xs font-medium ${
+                      record.type === 'vote' ? 'bg-blue-50 text-blue-700' :
+                      record.type === 'consensus' ? 'bg-atomic-50 text-atomic-700' :
+                      'bg-emerald-50 text-emerald-700'
+                    }">${record.type.toUpperCase()}</span>
+                    <span class="text-gray-700">${record.model}</span>
+                  </div>
+                  <div class="font-mono text-xs text-gray-400">
+                    ${record.prevHash} → <span class="text-gray-600">${record.hash}</span>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-gray-500">Chain Length: ${state.hashChain.length} records</span>
+              <span class="text-gray-500">Offline Verifiable • No Network Required</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 bg-white rounded-xl border border-gray-200 p-6">
+          <h3 class="font-semibold text-gray-900 mb-3">What This Proves</h3>
+          <ul class="space-y-3">
+            <li class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-emerald-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              <span class="text-gray-700"><span class="font-medium">Tamper-evident:</span> Any modification to historical records breaks the hash chain</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-emerald-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              <span class="text-gray-700"><span class="font-medium">Auditable:</span> Every vote, every verdict, every outcome is permanently recorded</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-emerald-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              <span class="text-gray-700"><span class="font-medium">Offline-verifiable:</span> No network or third party needed to verify integrity</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-emerald-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              <span class="text-gray-700"><span class="font-medium">Not blockchain:</span> No consensus mechanism overhead. Mathematical proof only.</span>
+            </li>
+          </ul>
+        </div>
+      `;
+    }
+
+    // Initialize
+    render();
+
+    // ==================== LIVE INGESTION ====================
+    const demoRfps = [
+      { id: 'demo-1', name: 'Northeast Hospital Network EMR Integration', client: 'Providence Health', industry: 'Healthcare', value: '$4.2M', reqs: 8, verdict: 'BID', confidence: 78, capMatch: 82 },
+      { id: 'demo-2', name: 'Municipal Water Authority SCADA Security', client: 'City of Portland', industry: 'Government', value: '$1.8M', reqs: 6, verdict: 'CONDITIONAL', confidence: 61, capMatch: 68 },
+      { id: 'demo-3', name: 'Regional Bank Core Modernization', client: 'Community First Bank', industry: 'Financial Services', value: '$7.5M', reqs: 12, verdict: 'NO-BID', confidence: 82, capMatch: 41 },
+      { id: 'demo-4', name: 'National Logistics Fleet Management', client: 'TransAmerica Freight', industry: 'Transportation', value: '$3.3M', reqs: 7, verdict: 'BID', confidence: 85, capMatch: 91 },
+      { id: 'demo-5', name: 'University Research Data Platform', client: 'State University System', industry: 'Education', value: '$2.1M', reqs: 9, verdict: 'BID', confidence: 72, capMatch: 76 },
+      { id: 'demo-6', name: 'Insurance Claims AI Automation', client: 'National Mutual Insurance', industry: 'Insurance', value: '$5.8M', reqs: 11, verdict: 'NO-BID', confidence: 74, capMatch: 38 },
+      { id: 'demo-7', name: 'Retail Inventory Optimization', client: 'MegaMart Stores', industry: 'Retail', value: '$4.7M', reqs: 8, verdict: 'BID', confidence: 81, capMatch: 88 },
+      { id: 'demo-8', name: 'Pharma Clinical Trial Management', client: 'BioGen Research', industry: 'Life Sciences', value: '$6.2M', reqs: 14, verdict: 'NO-BID', confidence: 88, capMatch: 29 },
+      { id: 'demo-9', name: 'Energy Grid Monitoring System', client: 'Southwest Power', industry: 'Utilities', value: '$8.9M', reqs: 10, verdict: 'CONDITIONAL', confidence: 55, capMatch: 62 },
+      { id: 'demo-10', name: 'Hotel Chain Guest Experience Platform', client: 'Global Hospitality Group', industry: 'Hospitality', value: '$3.9M', reqs: 7, verdict: 'BID', confidence: 79, capMatch: 84 }
+    ];
+
+    const stages = ['queued', 'extracting', 'matching', 'voting', 'computing', 'complete'];
+    const stageLabels = {
+      queued: 'Queued',
+      extracting: 'Extracting Requirements',
+      matching: 'Matching Capabilities',
+      voting: 'Tribunal Voting',
+      computing: 'Computing Consensus',
+      complete: 'Complete'
+    };
+
+    let liveState = {
+      rfps: [],
+      isRunning: false,
+      currentDetail: null,
+      processedCount: 0,
+      stats: { bid: 0, noBid: 0, conditional: 0 }
+    };
+
+    function showLiveIngestion() {
+      document.getElementById('live-modal').classList.remove('hidden');
+      document.getElementById('live-modal').classList.add('flex');
+      resetIngestion();
+      renderLiveContent();
+    }
+
+    function hideLiveIngestion() {
+      document.getElementById('live-modal').classList.add('hidden');
+      document.getElementById('live-modal').classList.remove('flex');
+      liveState.isRunning = false;
+    }
+
+    function resetIngestion() {
+      liveState = {
+        rfps: demoRfps.map(r => ({ ...r, stage: 'queued', progress: 0, votes: [], extractedReqs: 0, matchedCaps: 0 })),
+        isRunning: false,
+        currentDetail: null,
+        processedCount: 0,
+        stats: { bid: 0, noBid: 0, conditional: 0 }
+      };
+      document.getElementById('start-btn').disabled = false;
+      document.getElementById('start-btn').classList.remove('opacity-50');
+      renderLiveContent();
+    }
+
+    async function startIngestion() {
+      if (liveState.isRunning) return;
+      liveState.isRunning = true;
+      document.getElementById('start-btn').disabled = true;
+      document.getElementById('start-btn').classList.add('opacity-50');
+
+      // Process RFPs with staggered starts
+      const processRfp = async (rfp, delay) => {
+        await sleep(delay);
+        
+        // Stage: Extracting
+        rfp.stage = 'extracting';
+        renderLiveContent();
+        for (let i = 1; i <= rfp.reqs; i++) {
+          await sleep(150 + Math.random() * 100);
+          rfp.extractedReqs = i;
+          rfp.progress = (i / rfp.reqs) * 25;
+          renderLiveContent();
+        }
+
+        // Stage: Matching
+        rfp.stage = 'matching';
+        rfp.progress = 25;
+        renderLiveContent();
+        for (let i = 1; i <= rfp.reqs; i++) {
+          await sleep(100 + Math.random() * 80);
+          rfp.matchedCaps = i;
+          rfp.progress = 25 + (i / rfp.reqs) * 25;
+          renderLiveContent();
+        }
+
+        // Stage: Voting
+        rfp.stage = 'voting';
+        rfp.progress = 50;
+        rfp.votes = [];
+        renderLiveContent();
+        const models = ['Model A', 'Model B', 'Model C', 'Model D'];
+        for (let model of models) {
+          await sleep(300 + Math.random() * 200);
+          const vote = rfp.verdict === 'BID' ? (Math.random() > 0.2 ? 'BID' : 'CONDITIONAL') :
+                       rfp.verdict === 'NO-BID' ? (Math.random() > 0.2 ? 'NO-BID' : 'CONDITIONAL') :
+                       (Math.random() > 0.5 ? 'BID' : 'CONDITIONAL');
+          rfp.votes.push({ model, vote, confidence: (50 + Math.random() * 40).toFixed(0) });
+          rfp.progress = 50 + (rfp.votes.length / 4) * 25;
+          renderLiveContent();
+        }
+
+        // Stage: Computing
+        rfp.stage = 'computing';
+        rfp.progress = 75;
+        renderLiveContent();
+        await sleep(400 + Math.random() * 300);
+        rfp.phi = (0.4 + Math.random() * 0.5).toFixed(3);
+        rfp.psi = (0.4 + Math.random() * 0.5).toFixed(3);
+        rfp.delta = Math.abs(rfp.phi - rfp.psi).toFixed(3);
+        renderLiveContent();
+        await sleep(300);
+
+        // Stage: Complete
+        rfp.stage = 'complete';
+        rfp.progress = 100;
+        liveState.processedCount++;
+        if (rfp.verdict === 'BID') liveState.stats.bid++;
+        else if (rfp.verdict === 'NO-BID') liveState.stats.noBid++;
+        else liveState.stats.conditional++;
+        renderLiveContent();
+      };
+
+      // Start processing with staggered delays
+      const promises = liveState.rfps.map((rfp, i) => processRfp(rfp, i * 800));
+      await Promise.all(promises);
+      
+      liveState.isRunning = false;
+    }
+
+    function selectLiveDetail(id) {
+      liveState.currentDetail = liveState.currentDetail === id ? null : id;
+      renderLiveContent();
+    }
+
+    function renderLiveContent() {
+      const el = document.getElementById('live-content');
+      const stats = liveState.stats;
+      const processed = liveState.processedCount;
+      const total = liveState.rfps.length;
+
+      el.innerHTML = `
+        <!-- Stats Bar -->
+        <div class="grid grid-cols-6 gap-4 mb-6">
+          <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-gray-900">${total}</div>
+            <div class="text-xs text-gray-500">Total RFPs</div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-atomic-600">${processed}</div>
+            <div class="text-xs text-gray-500">Processed</div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-emerald-600">${stats.bid}</div>
+            <div class="text-xs text-gray-500">Recommend BID</div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-red-600">${stats.noBid}</div>
+            <div class="text-xs text-gray-500">Recommend NO-BID</div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-amber-600">${stats.conditional}</div>
+            <div class="text-xs text-gray-500">Conditional</div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div class="text-2xl font-bold text-gray-900">${processed > 0 ? ((stats.bid / processed) * 100).toFixed(0) : 0}%</div>
+            <div class="text-xs text-gray-500">Bid Rate</div>
+          </div>
+        </div>
+
+        <!-- Pipeline View -->
+        <div class="grid grid-cols-6 gap-2 mb-6 text-center text-xs font-medium text-gray-500">
+          ${stages.map(s => `<div class="py-2 px-1 bg-gray-100 rounded-lg">${stageLabels[s]}</div>`).join('')}
+        </div>
+
+        <!-- RFP Cards -->
+        <div class="space-y-3">
+          ${liveState.rfps.map(rfp => renderLiveRfpCard(rfp)).join('')}
+        </div>
+
+        <!-- Summary Message -->
+        ${processed === total && total > 0 ? `
+          <div class="mt-6 p-6 bg-gradient-to-r from-atomic-500 to-atomic-700 rounded-xl text-white text-center">
+            <div class="text-2xl font-bold mb-2">Processing Complete</div>
+            <p class="text-atomic-100 mb-4">
+              Analyzed ${total} RFPs in real-time. ${stats.bid} recommended to bid, ${stats.noBid} recommended to pass, ${stats.conditional} need clarification.
+            </p>
+            <div class="text-sm text-atomic-200">
+              Every decision is hash-chained. Every vote is recorded. Every credential is updated.
+            </div>
+          </div>
+        ` : ''}
+      `;
+    }
+
+    function renderLiveRfpCard(rfp) {
+      const stageIndex = stages.indexOf(rfp.stage);
+      const isExpanded = liveState.currentDetail === rfp.id;
+      
+      const stageColors = {
+        queued: 'bg-gray-100 text-gray-500',
+        extracting: 'bg-blue-100 text-blue-700',
+        matching: 'bg-purple-100 text-purple-700',
+        voting: 'bg-amber-100 text-amber-700',
+        computing: 'bg-atomic-100 text-atomic-700',
+        complete: rfp.verdict === 'BID' ? 'bg-emerald-100 text-emerald-700' : rfp.verdict === 'NO-BID' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+      };
+
+      return `
+        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden ${rfp.stage !== 'queued' ? 'cursor-pointer' : ''}" ${rfp.stage !== 'queued' ? `onclick="selectLiveDetail('${rfp.id}')"` : ''}>
+          <div class="p-4">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg ${stageColors[rfp.stage]} flex items-center justify-center">
+                  ${rfp.stage === 'complete' ? (rfp.verdict === 'BID' ? '✓' : rfp.verdict === 'NO-BID' ? '✗' : '?') : 
+                    rfp.stage === 'queued' ? '◯' : 
+                    '<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>'}
+                </div>
+                <div>
+                  <div class="font-medium text-gray-900">${rfp.name}</div>
+                  <div class="text-sm text-gray-500">${rfp.client} • ${rfp.industry} • ${rfp.value}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-4">
+                <div class="text-right">
+                  <div class="text-sm font-medium ${stageColors[rfp.stage].split(' ')[1]}">${stageLabels[rfp.stage]}</div>
+                  ${rfp.stage === 'complete' ? `<div class="text-xs text-gray-500">${rfp.confidence}% confidence</div>` : ''}
+                </div>
+                ${rfp.stage === 'complete' ? `
+                  <span class="px-3 py-1 rounded-full text-sm font-semibold ${
+                    rfp.verdict === 'BID' ? 'bg-emerald-50 text-emerald-700' :
+                    rfp.verdict === 'NO-BID' ? 'bg-red-50 text-red-700' :
+                    'bg-amber-50 text-amber-700'
+                  }">${rfp.verdict}</span>
+                ` : ''}
+              </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
+              <div class="h-full rounded-full transition-all duration-300 ${
+                rfp.stage === 'complete' ? (rfp.verdict === 'BID' ? 'bg-emerald-500' : rfp.verdict === 'NO-BID' ? 'bg-red-500' : 'bg-amber-500') : 'bg-atomic-500'
+              }" style="width: ${rfp.progress}%"></div>
+            </div>
+
+            <!-- Stage Indicators -->
+            <div class="grid grid-cols-6 gap-1">
+              ${stages.map((s, i) => `
+                <div class="h-1.5 rounded-full ${i <= stageIndex ? (rfp.stage === 'complete' ? (rfp.verdict === 'BID' ? 'bg-emerald-500' : rfp.verdict === 'NO-BID' ? 'bg-red-400' : 'bg-amber-400') : 'bg-atomic-500') : 'bg-gray-200'}"></div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Expanded Detail -->
+          ${isExpanded && rfp.stage !== 'queued' ? `
+            <div class="border-t border-gray-100 bg-gray-50 p-4">
+              <div class="grid grid-cols-3 gap-4">
+                <!-- Requirements -->
+                <div class="bg-white rounded-lg p-3 border border-gray-200">
+                  <div class="text-xs font-medium text-gray-500 mb-2">Requirements Extracted</div>
+                  <div class="text-2xl font-bold text-gray-900">${rfp.extractedReqs} <span class="text-sm font-normal text-gray-400">/ ${rfp.reqs}</span></div>
+                  <div class="mt-2 space-y-1">
+                    ${Array(Math.min(rfp.extractedReqs, 4)).fill(0).map((_, i) => `
+                      <div class="text-xs text-gray-600 truncate">• Requirement ${i + 1} extracted</div>
+                    `).join('')}
+                    ${rfp.extractedReqs > 4 ? `<div class="text-xs text-gray-400">+${rfp.extractedReqs - 4} more...</div>` : ''}
+                  </div>
+                </div>
+
+                <!-- Capability Match -->
+                <div class="bg-white rounded-lg p-3 border border-gray-200">
+                  <div class="text-xs font-medium text-gray-500 mb-2">Capability Match</div>
+                  <div class="text-2xl font-bold ${rfp.capMatch >= 70 ? 'text-emerald-600' : rfp.capMatch >= 50 ? 'text-amber-600' : 'text-red-600'}">${rfp.capMatch}%</div>
+                  <div class="mt-2">
+                    <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div class="h-full rounded-full ${rfp.capMatch >= 70 ? 'bg-emerald-500' : rfp.capMatch >= 50 ? 'bg-amber-500' : 'bg-red-500'}" style="width: ${rfp.capMatch}%"></div>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">${rfp.matchedCaps} of ${rfp.reqs} matched</div>
+                  </div>
+                </div>
+
+                <!-- Tribunal Votes -->
+                <div class="bg-white rounded-lg p-3 border border-gray-200">
+                  <div class="text-xs font-medium text-gray-500 mb-2">Tribunal Votes</div>
+                  ${rfp.votes.length > 0 ? `
+                    <div class="space-y-1.5">
+                      ${rfp.votes.map(v => `
+                        <div class="flex items-center justify-between">
+                          <span class="text-xs text-gray-600">${v.model}</span>
+                          <span class="text-xs font-medium ${v.vote === 'BID' ? 'text-emerald-600' : v.vote === 'NO-BID' ? 'text-red-600' : 'text-amber-600'}">${v.vote}</span>
+                        </div>
+                      `).join('')}
+                    </div>
+                  ` : `<div class="text-sm text-gray-400">Awaiting votes...</div>`}
+                </div>
+              </div>
+
+              ${rfp.stage === 'complete' || rfp.stage === 'computing' ? `
+                <div class="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
+                  <div class="flex gap-6 text-xs">
+                    <div><span class="text-gray-500">Φ:</span> <span class="font-mono">${rfp.phi || '...'}</span></div>
+                    <div><span class="text-gray-500">Ψ:</span> <span class="font-mono">${rfp.psi || '...'}</span></div>
+                    <div><span class="text-gray-500">Δ:</span> <span class="font-mono">${rfp.delta || '...'}</span></div>
+                  </div>
+                  ${rfp.stage === 'complete' ? `
+                    <div class="text-xs text-gray-500">
+                      Hash: <span class="font-mono">${generateHash(rfp).slice(0, 12)}</span>
+                    </div>
+                  ` : ''}
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    // ==================== REAL-TIME RFP ANALYSIS ====================
+    const sampleRfpsForAnalysis = [
+      {
+        id: 'rfp-001', name: 'Cloud Migration & Modernization', client: 'Pacific Northwest Healthcare',
+        industry: 'Healthcare', value: '$2.4M', deadline: '45 days', difficulty: 'High',
+        summary: 'Enterprise cloud migration for 12 hospital network with HIPAA compliance.'
+      },
+      {
+        id: 'rfp-002', name: 'AI-Powered Fraud Detection', client: 'First National Banking',
+        industry: 'Financial Services', value: '$1.8M', deadline: '30 days', difficulty: 'High',
+        summary: 'Real-time fraud detection platform using ML for transaction monitoring.'
+      },
+      {
+        id: 'rfp-003', name: 'Smart City IoT Platform', client: 'Metro Denver Municipal',
+        industry: 'Government', value: '$4.2M', deadline: '60 days', difficulty: 'Very High',
+        summary: 'City-wide IoT infrastructure for traffic, utilities, and public safety.'
+      },
+      {
+        id: 'rfp-004', name: 'E-Commerce Platform Rebuild', client: 'Outdoor Gear Collective',
+        industry: 'Retail', value: '$650K', deadline: '21 days', difficulty: 'Medium',
+        summary: 'Modern headless commerce platform to replace legacy Magento.'
+      },
+      {
+        id: 'rfp-005', name: 'Cybersecurity Operations Center', client: 'Meridian Energy Partners',
+        industry: 'Energy', value: '$3.1M', deadline: '45 days', difficulty: 'High',
+        summary: '24/7 SOC with OT/IT convergence for critical infrastructure.'
+      }
+    ];
+
+    let analyzeState = {
+      selectedRfp: null,
+      isAnalyzing: false,
+      log: [],
+      votes: {},
+      consensus: null,
+      report: null
+    };
+
+    function showAnalyzeRfp() {
+      document.getElementById('analyze-modal').classList.remove('hidden');
+      document.getElementById('analyze-modal').classList.add('flex');
+      analyzeState = { selectedRfp: null, isAnalyzing: false, log: [], votes: {}, consensus: null, report: null };
+      checkLlmStatus();
+      renderAnalyzeContent();
+    }
+
+    function hideAnalyzeRfp() {
+      document.getElementById('analyze-modal').classList.add('hidden');
+      document.getElementById('analyze-modal').classList.remove('flex');
+      analyzeState.isAnalyzing = false;
+    }
+
+    async function checkLlmStatus() {
+      try {
+        const resp = await fetch('/');
+        const data = await resp.json();
+        if (data.llm_status) {
+          ['claude', 'gpt', 'grok'].forEach(m => {
+            const el = document.getElementById('status-' + m);
+            const key = m === 'gpt' ? 'gpt4' : m;
+            if (data.llm_status[key] === 'configured') {
+              el.className = 'px-2 py-1 rounded-full bg-emerald-100 text-emerald-700';
+            } else {
+              el.className = 'px-2 py-1 rounded-full bg-red-100 text-red-600';
+            }
+          });
+        }
+      } catch(e) { console.log('LLM status check failed'); }
+    }
+
+    function selectRfpForAnalysis(rfpId) {
+      analyzeState.selectedRfp = sampleRfpsForAnalysis.find(r => r.id === rfpId);
+      renderAnalyzeContent();
+    }
+
+    async function startRfpAnalysis() {
+      if (!analyzeState.selectedRfp || analyzeState.isAnalyzing) return;
+      analyzeState.isAnalyzing = true;
+      analyzeState.log = [];
+      analyzeState.votes = {};
+      analyzeState.consensus = null;
+      analyzeState.report = null;
+      renderAnalyzeContent();
+
+      try {
+        const eventSource = new EventSource('/api/analyze/' + analyzeState.selectedRfp.id);
+
+        eventSource.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          handleAnalysisEvent(data);
+          if (data.phase === 'done') {
+            eventSource.close();
+            analyzeState.isAnalyzing = false;
+            renderAnalyzeContent();
+          }
+        };
+
+        eventSource.onerror = () => {
+          eventSource.close();
+          analyzeState.log.push({ time: new Date().toLocaleTimeString(), phase: 'error', message: 'Connection lost' });
+          analyzeState.isAnalyzing = false;
+          renderAnalyzeContent();
+        };
+      } catch (e) {
+        analyzeState.isAnalyzing = false;
+        renderAnalyzeContent();
+      }
+    }
+
+    function handleAnalysisEvent(data) {
+      const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+
+      if (data.phase === 'processing' || data.phase === 'requirements' && data.step === 'start') {
+        analyzeState.log.push({ time, phase: data.phase, message: data.message });
+      } else if (data.phase === 'requirements' && data.step === 'analyze') {
+        const req = data.requirement;
+        analyzeState.log.push({ time, phase: 'requirements', message: '[' + req.requirement_id + '] ' + req.type + ' - ' + req.match_score + '% match' });
+      } else if (data.phase === 'requirements' && data.step === 'summary') {
+        analyzeState.log.push({ time, phase: 'requirements', message: 'Summary: ' + data.avg_score.toFixed(1) + '% overall, ' + data.gap_count + ' gaps' });
+      } else if (data.phase === 'tribunal' && data.step === 'voting') {
+        analyzeState.log.push({ time, phase: 'tribunal', message: data.model + ' analyzing...' });
+        analyzeState.votes[data.model] = { status: 'thinking' };
+      } else if (data.phase === 'tribunal' && data.step === 'vote') {
+        const v = data.vote;
+        analyzeState.log.push({ time, phase: 'tribunal', message: v.model + ': ' + v.verdict + ' (' + (v.confidence * 100).toFixed(0) + '%)' });
+        analyzeState.votes[v.model] = { verdict: v.verdict, confidence: v.confidence, rationale: v.raw_response || v.rationale };
+      } else if (data.phase === 'tribunal' && data.step === 'error') {
+        analyzeState.log.push({ time, phase: 'tribunal', message: data.model + ': Error - ' + data.error });
+        analyzeState.votes[data.model] = { status: 'error', error: data.error };
+      } else if (data.phase === 'consensus' && data.step === 'result') {
+        analyzeState.consensus = data.consensus;
+        analyzeState.log.push({ time, phase: 'consensus', message: 'Verdict: ' + data.consensus.verdict + ' (' + (data.consensus.confidence * 100).toFixed(0) + '% confidence)' });
+      } else if (data.phase === 'report' && data.step === 'complete') {
+        analyzeState.report = data.report;
+        analyzeState.log.push({ time, phase: 'report', message: 'Analysis complete' });
+      }
+      renderAnalyzeContent();
+    }
+
+    function renderAnalyzeContent() {
+      const el = document.getElementById('analyze-content');
+      const rfp = analyzeState.selectedRfp;
+
+      el.innerHTML = `
+        <div class="grid grid-cols-3 gap-6">
+          <!-- Left: RFP Selection -->
+          <div class="space-y-4">
+            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Select RFP</h3>
+            <div class="space-y-2">
+              ${sampleRfpsForAnalysis.map(r => `
+                <div onclick="selectRfpForAnalysis('${r.id}')" class="p-4 bg-white rounded-xl border-2 cursor-pointer transition-all ${analyzeState.selectedRfp?.id === r.id ? 'border-atomic-500 bg-atomic-50' : 'border-gray-200 hover:border-atomic-300'}">
+                  <div class="flex justify-between items-start mb-2">
+                    <div class="font-medium text-gray-900 text-sm">${r.name}</div>
+                    <div class="text-emerald-600 font-semibold text-sm">${r.value}</div>
+                  </div>
+                  <div class="text-xs text-gray-500 mb-2">${r.client}</div>
+                  <div class="flex gap-2">
+                    <span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">${r.industry}</span>
+                    <span class="px-2 py-0.5 ${r.difficulty === 'Very High' ? 'bg-red-100 text-red-700' : r.difficulty === 'High' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'} rounded text-xs">${r.difficulty}</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            <div class="flex gap-2">
+              <button onclick="showRfpViewer()" ${!rfp ? 'disabled' : ''} class="flex-1 py-3 px-4 bg-white border border-gray-300 hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed text-gray-700 font-medium rounded-xl transition-colors flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+                View RFP
+              </button>
+              <button onclick="startRfpAnalysis()" ${!rfp || analyzeState.isAnalyzing ? 'disabled' : ''} class="flex-1 py-3 px-4 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2">
+              ${analyzeState.isAnalyzing ? '<svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg> Analyzing...' : 'Analyze RFP'}
+              </button>
+            </div>
+
+            <!-- Report Downloads (shown when RFP selected) -->
+            ${rfp ? `
+            <div class="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+              <div class="flex items-center justify-between mb-3">
+                <div class="text-sm font-semibold text-gray-700">Available Reports</div>
+                <div class="flex items-center gap-1 text-xs text-emerald-600">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                  </svg>
+                  Immutable & Verifiable
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <button onclick="downloadReport('${rfp.id}', 'executive')" class="p-3 text-left bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group">
+                  <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center group-hover:bg-blue-200">
+                      <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <div class="text-sm font-medium text-gray-900">Executive</div>
+                      <div class="text-xs text-gray-500">2-3 pages</div>
+                    </div>
+                  </div>
+                </button>
+                <button onclick="downloadReport('${rfp.id}', 'technical')" class="p-3 text-left bg-white rounded-lg border border-gray-200 hover:border-purple-300 hover:bg-purple-50 transition-colors group">
+                  <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center group-hover:bg-purple-200">
+                      <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <div class="text-sm font-medium text-gray-900">Technical</div>
+                      <div class="text-xs text-gray-500">5-8 pages</div>
+                    </div>
+                  </div>
+                </button>
+                <button onclick="downloadReport('${rfp.id}', 'legal')" class="p-3 text-left bg-white rounded-lg border border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-colors group">
+                  <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center group-hover:bg-amber-200">
+                      <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <div class="text-sm font-medium text-gray-900">Legal</div>
+                      <div class="text-xs text-gray-500">3-5 pages</div>
+                    </div>
+                  </div>
+                </button>
+                <button onclick="downloadReport('${rfp.id}', 'full')" class="p-3 text-left bg-white rounded-lg border border-gray-200 hover:border-gray-400 hover:bg-gray-100 transition-colors group">
+                  <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-gray-200 flex items-center justify-center group-hover:bg-gray-300">
+                      <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <div class="text-sm font-medium text-gray-900">Full Audit</div>
+                      <div class="text-xs text-gray-500">8-12 pages</div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            ` : ''}
+          </div>
+
+          <!-- Middle: Processing Log & Tribunal -->
+          <div class="space-y-4">
+            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Analysis Pipeline</h3>
+            <div class="bg-white rounded-xl border border-gray-200 h-64 overflow-y-auto p-4 font-mono text-xs" id="analysis-log">
+              ${analyzeState.log.length === 0 ? '<div class="text-gray-400 text-center py-8">Select an RFP and click Analyze</div>' :
+                analyzeState.log.map(l => `
+                  <div class="flex gap-2 py-1">
+                    <span class="text-gray-400">${l.time}</span>
+                    <span class="px-1.5 py-0.5 rounded text-xs ${l.phase === 'processing' ? 'bg-blue-100 text-blue-700' : l.phase === 'requirements' ? 'bg-purple-100 text-purple-700' : l.phase === 'tribunal' ? 'bg-amber-100 text-amber-700' : l.phase === 'consensus' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}">${l.phase}</span>
+                    <span class="text-gray-700">${l.message}</span>
+                  </div>
+                `).join('')}
+            </div>
+
+            <!-- Tribunal Votes -->
+            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Tribunal Votes</h3>
+            <div class="grid grid-cols-3 gap-3">
+              ${['claude-sonnet-4', 'gpt-4o', 'grok-2'].map(m => {
+                const v = analyzeState.votes[m];
+                return `
+                  <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                    <div class="text-xs font-medium text-gray-500 mb-2">${m.split('-')[0].toUpperCase()}</div>
+                    <div class="text-lg font-bold ${v?.verdict?.includes('BID') && !v?.verdict?.includes('NO') ? 'text-emerald-600' : v?.verdict?.includes('NO') ? 'text-red-600' : v?.status === 'thinking' ? 'text-amber-500' : 'text-gray-400'}">
+                      ${v?.status === 'thinking' ? '...' : v?.verdict || '--'}
+                    </div>
+                    <div class="text-xs text-gray-400">${v?.confidence ? (v.confidence * 100).toFixed(0) + '%' : ''}</div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <!-- Right: Results -->
+          <div class="space-y-4">
+            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Analysis Results</h3>
+            ${analyzeState.report ? `
+              <div class="bg-white rounded-xl border border-gray-200 p-4">
+                <div class="flex items-center justify-between mb-4">
+                  <div class="text-2xl font-bold ${analyzeState.report.recommendation.includes('BID') && !analyzeState.report.recommendation.includes('NO') ? 'text-emerald-600' : 'text-red-600'}">
+                    ${analyzeState.report.recommendation.replace(/_/g, ' ')}
+                  </div>
+                  <div class="text-right">
+                    <div class="text-2xl font-bold text-gray-900">${(analyzeState.report.tribunal.confidence * 100).toFixed(0)}%</div>
+                    <div class="text-xs text-gray-500">Confidence</div>
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <div class="text-gray-500">Overall Fit</div>
+                    <div class="font-semibold">${analyzeState.report.analysis.overall_fit}%</div>
+                  </div>
+                  <div>
+                    <div class="text-gray-500">MUST Fit</div>
+                    <div class="font-semibold">${analyzeState.report.analysis.must_requirement_fit}%</div>
+                  </div>
+                  <div>
+                    <div class="text-gray-500">Gaps</div>
+                    <div class="font-semibold">${analyzeState.report.analysis.gap_count}</div>
+                  </div>
+                  <div>
+                    <div class="text-gray-500">Votes</div>
+                    <div class="font-semibold">${analyzeState.report.tribunal.votes}${analyzeState.report.tribunal.unanimous ? ' (Unanimous)' : ''}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="bg-white rounded-xl border border-gray-200 p-4">
+                <div class="text-xs font-semibold text-gray-500 uppercase mb-2">Risks</div>
+                ${analyzeState.report.risks.length ? analyzeState.report.risks.map(r => `
+                  <div class="text-sm p-2 mb-1 rounded ${r.level === 'HIGH' ? 'bg-red-50 text-red-700 border-l-2 border-red-500' : 'bg-amber-50 text-amber-700 border-l-2 border-amber-500'}">${r.description}</div>
+                `).join('') : '<div class="text-sm text-gray-400">No significant risks</div>'}
+              </div>
+              <div class="bg-white rounded-xl border border-gray-200 p-4">
+                <div class="text-xs font-semibold text-gray-500 uppercase mb-2">Next Steps</div>
+                <ul class="text-sm space-y-1">
+                  ${analyzeState.report.next_steps.map(s => `<li class="text-gray-700">• ${s}</li>`).join('')}
+                </ul>
+              </div>
+              ${renderReportButtons(analyzeState.selectedRfp?.id || 'unknown')}
+            ` : `
+              ${analyzeState.selectedRfp ? renderReportButtons(analyzeState.selectedRfp.id) : ''}
+              <div class="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400">
+                <svg class="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                Results will appear here after analysis
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+
+      // Auto-scroll log
+      const logEl = document.getElementById('analysis-log');
+      if (logEl) logEl.scrollTop = logEl.scrollHeight;
+    }
+
+
+    // ==================== REPORT DOWNLOAD FUNCTIONS ====================
+    const reportTypes = [
+      { id: 'executive', name: 'Executive Summary', icon: 'briefcase', color: 'blue', desc: 'For leadership' },
+      { id: 'technical', name: 'Technical Report', icon: 'code', color: 'purple', desc: 'Full analysis' },
+      { id: 'legal', name: 'Legal & Compliance', icon: 'shield', color: 'amber', desc: 'Risk focus' },
+      { id: 'full', name: 'Complete Record', icon: 'archive', color: 'gray', desc: 'Full audit' }
+    ];
+
+    function downloadReport(rfpId, reportType) {
+      // Create download link
+      const url = `/api/report/${rfpId}/${reportType}`;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `RFP_Analysis_${rfpId}_${reportType}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function renderReportButtons(rfpId) {
+      return `
+        <div class="bg-white rounded-xl border border-gray-200 p-4">
+          <div class="text-xs font-semibold text-gray-500 uppercase mb-3">Download Reports</div>
+          <div class="grid grid-cols-2 gap-2">
+            ${reportTypes.map(rt => `
+              <button onclick="downloadReport('${rfpId}', '${rt.id}')"
+                class="p-3 rounded-lg border border-gray-200 hover:border-${rt.color}-400 hover:bg-${rt.color}-50 transition-all text-left group">
+                <div class="flex items-center gap-2 mb-1">
+                  <svg class="w-4 h-4 text-${rt.color}-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    ${rt.icon === 'briefcase' ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>' :
+                      rt.icon === 'code' ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>' :
+                      rt.icon === 'shield' ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>' :
+                      '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>'}
+                  </svg>
+                  <span class="text-sm font-medium text-gray-700 group-hover:text-${rt.color}-700">${rt.name}</span>
+                </div>
+                <div class="text-xs text-gray-400">${rt.desc}</div>
+              </button>
+            `).join('')}
+          </div>
+          <div class="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-400">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            Cryptographically signed &amp; immutable
+          </div>
+        </div>
+      `;
+    }
+
+    // ==================== ENHANCED RFP VIEWER WITH TRANSPARENCY ====================
+
+    // Full RFP document content for demo
+    const FULL_RFP_DOCUMENTS = {
+      'rfp-001': {
+        title: 'Cloud Migration & Modernization Services',
+        client: 'Pacific Northwest Healthcare Consortium',
+        sections: [
+          {
+            id: 'cover',
+            title: 'Cover Page',
+            type: 'cover',
+            content: `REQUEST FOR PROPOSAL
+
+Cloud Migration & Modernization Services
+
+RFP Number: PNHC-2024-CM-001
+Issue Date: December 1, 2024
+Due Date: January 15, 2025
+
+Pacific Northwest Healthcare Consortium
+1200 Healthcare Way
+Seattle, WA 98101`
+          },
+          {
+            id: 'exec-summary',
+            title: 'Executive Summary',
+            type: 'section',
+            content: `The Pacific Northwest Healthcare Consortium (PNHC) seeks qualified vendors to provide comprehensive cloud migration and modernization services for our legacy healthcare information systems.
+
+This initiative represents a $2.4M investment over 18 months to transform our infrastructure and improve patient care delivery across 12 member hospitals and 47 outpatient facilities.
+
+Key Objectives:
+- Reduce infrastructure costs by 40%
+- Achieve 99.99% system availability
+- Enable real-time data analytics
+- Ensure full HIPAA/HITECH compliance`
+          },
+          {
+            id: 'background',
+            title: 'Background & Context',
+            type: 'section',
+            content: `PNHC currently operates a mix of on-premises systems including:
+- Epic EHR (2018 deployment, 2.3M patient records)
+- Custom billing integration layer (Java/Oracle)
+- Legacy data warehouse (SQL Server 2012, 15TB)
+- 47 departmental applications
+- Citrix VDI environment (3,200 concurrent users)
+
+Current infrastructure costs exceed $3.2M annually with 99.2% uptime SLA achievement. The aging hardware requires $1.8M in refresh investment within 24 months.
+
+Recent security audit identified 23 high-priority vulnerabilities requiring remediation.`
+          },
+          {
+            id: 'scope',
+            title: 'Scope of Work',
+            type: 'section',
+            content: `The selected vendor shall provide:
+
+Phase 1: Assessment & Planning (3 months)
+- Complete infrastructure discovery and documentation
+- Application dependency mapping
+- Security and compliance gap analysis
+- Migration wave planning
+- Total Cost of Ownership analysis
+
+Phase 2: Migration Execution (9 months)
+- Infrastructure provisioning and hardening
+- Application migration and testing
+- Data migration with validation
+- User acceptance testing
+- Parallel operations period
+
+Phase 3: Optimization & Handover (6 months)
+- Performance optimization
+- Cost optimization review
+- Knowledge transfer to internal teams
+- Documentation completion
+- Hypercare support
+
+All work must comply with HIPAA, HITECH, and Washington State healthcare privacy regulations.`
+          },
+          {
+            id: 'requirements',
+            title: 'Technical Requirements',
+            type: 'requirements',
+            requirements: [
+              { id: 'TR-001', priority: 'MUST', text: 'Vendor MUST have SOC 2 Type II certification current within 12 months' },
+              { id: 'TR-002', priority: 'MUST', text: 'Solution MUST support HIPAA-compliant data handling with BAA execution' },
+              { id: 'TR-003', priority: 'MUST', text: 'Vendor MUST provide 24/7/365 support with 15-minute response SLA for P1 issues' },
+              { id: 'TR-004', priority: 'MUST', text: 'All data MUST remain within US geographic boundaries' },
+              { id: 'TR-005', priority: 'SHALL', text: 'Migration SHALL achieve zero data loss with cryptographic verification' },
+              { id: 'TR-006', priority: 'SHALL', text: 'System SHALL maintain 99.9% uptime during transition periods' },
+              { id: 'TR-007', priority: 'SHALL', text: 'Solution SHALL include automated backup with 15-minute RPO' },
+              { id: 'TR-008', priority: 'SHOULD', text: 'Vendor SHOULD have minimum 5 healthcare sector migrations completed' },
+              { id: 'TR-009', priority: 'SHOULD', text: 'Solution SHOULD include automated failover capabilities with RTO < 4 hours' },
+              { id: 'TR-010', priority: 'SHOULD', text: 'Platform SHOULD support infrastructure-as-code deployment' },
+              { id: 'TR-011', priority: 'MAY', text: 'Vendor MAY propose hybrid cloud architecture for latency-sensitive applications' },
+              { id: 'TR-012', priority: 'MAY', text: 'Solution MAY include AI-powered monitoring and anomaly detection' }
+            ]
+          },
+          {
+            id: 'security',
+            title: 'Security Requirements',
+            type: 'requirements',
+            requirements: [
+              { id: 'SR-001', priority: 'MUST', text: 'All data at rest MUST be encrypted using AES-256 or equivalent' },
+              { id: 'SR-002', priority: 'MUST', text: 'All data in transit MUST use TLS 1.3 encryption' },
+              { id: 'SR-003', priority: 'MUST', text: 'Multi-factor authentication MUST be enforced for all administrative access' },
+              { id: 'SR-004', priority: 'SHALL', text: 'Security logging SHALL be retained for minimum 7 years' },
+              { id: 'SR-005', priority: 'SHALL', text: 'Vulnerability scanning SHALL be performed weekly with 72-hour critical remediation SLA' },
+              { id: 'SR-006', priority: 'SHOULD', text: 'Zero-trust network architecture SHOULD be implemented' }
+            ]
+          },
+          {
+            id: 'qualifications',
+            title: 'Vendor Qualifications',
+            type: 'section',
+            content: `Minimum Requirements:
+- 5+ years cloud migration experience
+- 3+ healthcare sector projects of similar scale ($2M+)
+- Certified partnership with major cloud provider (AWS/Azure/GCP) at Premier/Advanced level
+- References from organizations with 1,000+ beds
+- Financial stability (provide 3 years audited statements)
+- Errors & Omissions insurance minimum $5M
+- Cyber liability insurance minimum $10M
+
+Preferred Qualifications:
+- HITRUST CSF certification
+- Experience with Epic EHR migrations
+- Washington State business presence
+- FedRAMP authorized offerings`
+          },
+          {
+            id: 'evaluation',
+            title: 'Evaluation Criteria',
+            type: 'section',
+            content: `Proposals will be evaluated using the following weighted criteria:
+
+Technical Approach (35%)
+- Solution architecture quality
+- Migration methodology
+- Risk mitigation strategies
+- Innovation and best practices
+
+Relevant Experience (25%)
+- Healthcare sector experience
+- Similar project success stories
+- Team qualifications and certifications
+- Reference quality
+
+Cost Proposal (20%)
+- Total cost of ownership
+- Pricing transparency
+- Value optimization opportunities
+- Payment terms
+
+Project Timeline (10%)
+- Realistic scheduling
+- Milestone clarity
+- Resource allocation
+- Contingency planning
+
+Innovation & Value-Add (10%)
+- Additional capabilities offered
+- Partnership approach
+- Continuous improvement commitment
+- Future roadmap alignment`
+          },
+          {
+            id: 'submission',
+            title: 'Submission Instructions',
+            type: 'section',
+            content: `Submit proposals electronically to: rfp@pnhc.org
+
+Technical Proposal: Maximum 50 pages, PDF format
+Cost Proposal: Separate file, Excel format required
+References: Minimum 3, contact information included
+
+Critical Dates:
+- Questions Due: December 20, 2024
+- Answers Published: December 27, 2024
+- Proposal Deadline: January 15, 2025, 5:00 PM PST
+- Vendor Presentations: January 27-31, 2025
+- Selection Notification: February 14, 2025
+
+All proposals become property of PNHC and will be held in confidence.`
+          }
+        ]
+      },
+      'rfp-002': {
+        title: 'AI-Powered Fraud Detection System',
+        client: 'First National Banking Corporation',
+        sections: [
+          {
+            id: 'cover',
+            title: 'Cover Page',
+            type: 'cover',
+            content: `REQUEST FOR PROPOSAL
+
+AI-Powered Fraud Detection System
+
+RFP Number: FNBC-2024-FD-042
+Issue Date: November 15, 2024
+Due Date: January 10, 2025
+
+First National Banking Corporation
+500 Financial Center Drive
+Charlotte, NC 28202`
+          },
+          {
+            id: 'exec-summary',
+            title: 'Executive Summary',
+            type: 'section',
+            content: `First National Banking Corporation (FNBC) seeks an advanced AI/ML-based fraud detection platform to replace our current rule-based system deployed in 2019.
+
+Annual fraud losses currently exceed $12M across our retail and commercial banking divisions. Our target is a 60% reduction in fraud losses within 18 months of full deployment.
+
+FNBC processes 4.2 million transactions daily across:
+- 2.8M retail checking/savings accounts
+- 340,000 credit card accounts
+- 85,000 commercial banking relationships
+- $47B in assets under management`
+          },
+          {
+            id: 'background',
+            title: 'Current State Assessment',
+            type: 'section',
+            content: `Current Fraud Detection Infrastructure:
+- NICE Actimize (2019 deployment)
+- 2,400 custom rules
+- 12% false positive rate (industry avg: 8%)
+- Average detection time: 4.2 hours
+- Manual review queue: 15,000 cases/month
+
+Key Pain Points:
+- Rule maintenance requires 3 FTE analysts
+- New fraud patterns take 6-8 weeks to address
+- Limited cross-channel correlation
+- No real-time behavioral analytics
+- Insufficient explainability for regulatory inquiries
+
+2024 Fraud Statistics:
+- Card-not-present: $7.2M losses
+- Account takeover: $3.1M losses
+- Check fraud: $1.4M losses
+- Wire fraud: $0.8M losses`
+          },
+          {
+            id: 'scope',
+            title: 'Scope of Work',
+            type: 'section',
+            content: `The selected vendor will provide:
+
+Phase 1: Discovery & Design (2 months)
+- Current state assessment
+- Data pipeline design
+- Model architecture planning
+- Integration specifications
+- Success metrics definition
+
+Phase 2: Implementation (6 months)
+- Platform deployment
+- Data integration
+- Model training and validation
+- Parallel operation with existing system
+- Staff training
+
+Phase 3: Optimization (4 months)
+- Model tuning based on production data
+- False positive optimization
+- Regulatory documentation
+- Knowledge transfer
+- Go-live cutover
+
+Ongoing: Managed Services Option
+- 24/7 model monitoring
+- Quarterly model retraining
+- Regulatory update compliance
+- Performance reporting`
+          },
+          {
+            id: 'requirements',
+            title: 'Technical Requirements',
+            type: 'requirements',
+            requirements: [
+              { id: 'FR-001', priority: 'MUST', text: 'System MUST process transactions in under 100ms for real-time decisioning' },
+              { id: 'FR-002', priority: 'MUST', text: 'Platform MUST integrate with Fiserv DNA core banking via REST APIs' },
+              { id: 'FR-003', priority: 'MUST', text: 'Vendor MUST maintain PCI-DSS Level 1 service provider certification' },
+              { id: 'FR-004', priority: 'MUST', text: 'Solution MUST support minimum 10M transactions/day with horizontal scaling' },
+              { id: 'FR-005', priority: 'SHALL', text: 'ML models SHALL provide explainable outputs for regulatory review (SR 11-7)' },
+              { id: 'FR-006', priority: 'SHALL', text: 'System SHALL support real-time model retraining without service interruption' },
+              { id: 'FR-007', priority: 'SHALL', text: 'Platform SHALL maintain complete audit trail for 7 years' },
+              { id: 'FR-008', priority: 'SHOULD', text: 'Solution SHOULD achieve false positive rate below 2% within 6 months' },
+              { id: 'FR-009', priority: 'SHOULD', text: 'Platform SHOULD include network analysis for relationship-based fraud detection' },
+              { id: 'FR-010', priority: 'SHOULD', text: 'System SHOULD support federated learning for privacy-preserving model updates' },
+              { id: 'FR-011', priority: 'MAY', text: 'Vendor MAY propose behavioral biometrics integration' },
+              { id: 'FR-012', priority: 'MAY', text: 'Solution MAY include consortium data sharing capabilities' }
+            ]
+          },
+          {
+            id: 'compliance',
+            title: 'Compliance Requirements',
+            type: 'requirements',
+            requirements: [
+              { id: 'CR-001', priority: 'MUST', text: 'Solution MUST comply with BSA/AML requirements including SAR filing support' },
+              { id: 'CR-002', priority: 'MUST', text: 'Platform MUST support FFIEC examination requirements' },
+              { id: 'CR-003', priority: 'MUST', text: 'All models MUST have documented validation per SR 11-7 guidance' },
+              { id: 'CR-004', priority: 'SHALL', text: 'System SHALL support fair lending analysis and bias testing' },
+              { id: 'CR-005', priority: 'SHALL', text: 'Solution SHALL provide regulatory reporting automation' },
+              { id: 'CR-006', priority: 'SHOULD', text: 'Platform SHOULD include CFPB complaint pattern detection' }
+            ]
+          },
+          {
+            id: 'data-requirements',
+            title: 'Data Requirements',
+            type: 'section',
+            content: `Data Sources to Integrate:
+- Core banking transactions (Fiserv DNA)
+- Card authorization stream (Visa/Mastercard)
+- Online banking sessions (Akamai)
+- Mobile app telemetry (custom)
+- Call center interactions (Genesys)
+- Third-party enrichment (LexisNexis, Emailage)
+
+Data Volume Expectations:
+- 4.2M transactions/day
+- 2.1M login events/day
+- 890K mobile sessions/day
+- Historical data: 3 years minimum
+
+Data Retention:
+- Raw data: 90 days hot, 2 years warm
+- Aggregated features: 7 years
+- Model decisions: 7 years
+- Audit logs: 7 years`
+          },
+          {
+            id: 'evaluation',
+            title: 'Evaluation Criteria',
+            type: 'section',
+            content: `Scoring Methodology (Total 100 points):
+
+Technical Excellence (40 points)
+- Model accuracy and sophistication (15)
+- System architecture and scalability (10)
+- Integration capabilities (10)
+- Explainability features (5)
+
+Experience & Expertise (25 points)
+- Financial services implementations (10)
+- Team qualifications (8)
+- Reference quality (7)
+
+Cost Effectiveness (20 points)
+- Total cost of ownership (10)
+- ROI projections (5)
+- Pricing flexibility (5)
+
+Implementation Approach (15 points)
+- Project methodology (5)
+- Timeline realism (5)
+- Risk management (5)`
+          },
+          {
+            id: 'submission',
+            title: 'Submission Instructions',
+            type: 'section',
+            content: `Proposal Submission:
+Email to: procurement@fnbc.com
+Subject: "RFP FNBC-2024-FD-042 - [Vendor Name]"
+
+Required Components:
+1. Executive Summary (max 5 pages)
+2. Technical Proposal (max 75 pages)
+3. Pricing Proposal (separate document)
+4. Sample SOW and MSA redlines
+5. Client references (minimum 5)
+6. Product demonstration video (max 30 min)
+
+Timeline:
+- Pre-proposal Conference: November 25, 2024 (virtual)
+- Written Questions Due: December 6, 2024
+- Q&A Published: December 13, 2024
+- Proposals Due: January 10, 2025, 5:00 PM EST
+- Finalist Demonstrations: January 27-31, 2025
+- Selection Announcement: February 21, 2025`
+          }
+        ]
+      },
+      'rfp-003': {
+        title: 'Smart City IoT Platform',
+        client: 'Metro Denver Municipal Government',
+        sections: [
+          {
+            id: 'cover',
+            title: 'Cover Page',
+            type: 'cover',
+            content: `REQUEST FOR PROPOSAL
+
+Smart City IoT Platform & Infrastructure
+
+RFP Number: MDMG-2024-SC-018
+Issue Date: October 28, 2024
+Due Date: December 20, 2024
+
+Metro Denver Municipal Government
+Office of Innovation & Technology
+1437 Bannock Street
+Denver, CO 80202`
+          },
+          {
+            id: 'exec-summary',
+            title: 'Executive Summary',
+            type: 'section',
+            content: `Metro Denver Municipal Government (MDMG) seeks a comprehensive Smart City IoT platform to modernize city operations and improve quality of life for our 720,000 residents.
+
+This $4.2M initiative over 36 months will deploy connected infrastructure across:
+- 847 traffic intersections
+- 12,400 streetlights
+- 340 city facilities
+- 156 parks and recreation areas
+- 89 miles of priority transit corridors
+
+Expected outcomes include 15% reduction in traffic congestion, 25% decrease in energy consumption, and real-time visibility into city operations.`
+          },
+          {
+            id: 'background',
+            title: 'Current Infrastructure',
+            type: 'section',
+            content: `Existing Systems:
+- Siemens traffic management (2015, 312 intersections connected)
+- Itron smart meters (water/gas, 180K endpoints)
+- GE Lighting controls (4,200 fixtures converted)
+- Multiple departmental sensor deployments (no integration)
+
+Challenges:
+- Data silos across 14 city departments
+- No unified visualization or analytics
+- Limited predictive maintenance capabilities
+- Manual reporting for city council
+- Citizen engagement through outdated 311 system
+
+Recent Initiatives:
+- Denver Smart City Master Plan (2023)
+- Federal Infrastructure Grant awarded ($2.1M)
+- Colorado Smart Cities Coalition membership`
+          },
+          {
+            id: 'scope',
+            title: 'Scope of Work',
+            type: 'section',
+            content: `Core Platform Components:
+
+1. IoT Data Platform
+- Unified ingestion for all sensor types
+- Real-time stream processing
+- Historical data warehouse
+- API gateway for third-party integration
+
+2. Traffic Management Enhancement
+- Adaptive signal control (535 new intersections)
+- Vehicle counting and classification
+- Emergency vehicle preemption
+- Transit signal priority
+
+3. Environmental Monitoring
+- Air quality sensors (PM2.5, O3, NO2)
+- Noise level monitoring
+- Weather stations
+- Flood detection sensors
+
+4. Smart Lighting Expansion
+- LED conversion (8,200 remaining fixtures)
+- Dimming and scheduling
+- Integrated cameras for safety
+- Environmental sensors
+
+5. Citizen Engagement Platform
+- Mobile app for residents
+- Real-time city dashboard
+- 311 integration
+- Public data portal`
+          },
+          {
+            id: 'requirements',
+            title: 'Technical Requirements',
+            type: 'requirements',
+            requirements: [
+              { id: 'IOT-001', priority: 'MUST', text: 'Platform MUST support minimum 50,000 connected devices with horizontal scaling' },
+              { id: 'IOT-002', priority: 'MUST', text: 'Solution MUST provide sub-second latency for critical safety applications' },
+              { id: 'IOT-003', priority: 'MUST', text: 'System MUST support open standards (MQTT, CoAP, OPC-UA, NGSI-LD)' },
+              { id: 'IOT-004', priority: 'MUST', text: 'Platform MUST integrate with existing Siemens SCADA infrastructure' },
+              { id: 'IOT-005', priority: 'MUST', text: 'Solution MUST be deployable in Azure Government Cloud (FedRAMP)' },
+              { id: 'IOT-006', priority: 'SHALL', text: 'System SHALL provide edge computing capabilities for latency-sensitive use cases' },
+              { id: 'IOT-007', priority: 'SHALL', text: 'Platform SHALL support over-the-air device firmware updates' },
+              { id: 'IOT-008', priority: 'SHALL', text: 'Solution SHALL include digital twin capabilities for city infrastructure' },
+              { id: 'IOT-009', priority: 'SHOULD', text: 'Platform SHOULD support computer vision for traffic and safety analytics' },
+              { id: 'IOT-010', priority: 'SHOULD', text: 'System SHOULD include predictive maintenance algorithms' },
+              { id: 'IOT-011', priority: 'SHOULD', text: 'Solution SHOULD provide citizen-facing mobile application' },
+              { id: 'IOT-012', priority: 'MAY', text: 'Platform MAY include autonomous vehicle infrastructure preparation' },
+              { id: 'IOT-013', priority: 'MAY', text: 'Vendor MAY propose 5G/CBRS network integration' }
+            ]
+          },
+          {
+            id: 'security',
+            title: 'Cybersecurity Requirements',
+            type: 'requirements',
+            requirements: [
+              { id: 'SEC-001', priority: 'MUST', text: 'All devices MUST support secure boot and hardware root of trust' },
+              { id: 'SEC-002', priority: 'MUST', text: 'Platform MUST comply with NIST Cybersecurity Framework' },
+              { id: 'SEC-003', priority: 'MUST', text: 'Solution MUST support role-based access control with MFA' },
+              { id: 'SEC-004', priority: 'SHALL', text: 'System SHALL include network segmentation capabilities' },
+              { id: 'SEC-005', priority: 'SHALL', text: 'Platform SHALL provide real-time threat detection and alerting' },
+              { id: 'SEC-006', priority: 'SHOULD', text: 'Solution SHOULD include device certificate management system' }
+            ]
+          },
+          {
+            id: 'data-governance',
+            title: 'Data Governance',
+            type: 'section',
+            content: `Data Ownership:
+- All data collected remains property of MDMG
+- Vendor has no rights to sell or share data
+- Citizens retain rights per Colorado Privacy Act
+
+Privacy Requirements:
+- Video analytics must blur faces by default
+- No license plate retention beyond 72 hours
+- Aggregate-only reporting for public dashboards
+- Opt-out mechanism for location-based services
+
+Open Data Commitment:
+- Non-sensitive data published to Open Data Portal
+- Standard formats (GeoJSON, CSV, API)
+- Monthly data quality reviews
+- Community feedback mechanism`
+          },
+          {
+            id: 'evaluation',
+            title: 'Evaluation Criteria',
+            type: 'section',
+            content: `Selection Criteria (100 points total):
+
+Technical Solution (35 points)
+- Platform architecture and scalability
+- Standards compliance and interoperability
+- Security posture
+- Innovation and future-readiness
+
+Implementation Approach (25 points)
+- Project management methodology
+- Phased deployment plan
+- Risk mitigation strategies
+- Local workforce development
+
+Vendor Qualifications (20 points)
+- Smart city implementation experience
+- Municipal government references
+- Team expertise and certifications
+- Financial stability
+
+Cost Proposal (20 points)
+- Total cost of ownership (10 years)
+- Grant eligibility alignment
+- Financing options
+- Ongoing operational costs
+
+Evaluation Committee:
+- CIO (Chair)
+- Director of Public Works
+- Chief Data Officer
+- Traffic Engineering Manager
+- Citizen Advisory Board representative`
+          },
+          {
+            id: 'submission',
+            title: 'Submission Instructions',
+            type: 'section',
+            content: `Submission Portal: vendors.denvergov.org/rfp
+
+Required Documents:
+1. Technical Volume (max 100 pages)
+2. Management Volume (max 30 pages)
+3. Past Performance Volume (5 references)
+4. Cost Volume (use provided template)
+5. Product demonstrations (URL to hosted demo)
+6. Small Business participation plan
+
+Key Dates:
+- Industry Day: November 8, 2024
+- Site Visits: November 12-15, 2024
+- Questions Due: November 29, 2024
+- Answers Published: December 6, 2024
+- Proposals Due: December 20, 2024, 3:00 PM MST
+- Demonstrations: January 13-17, 2025
+- Award Announcement: February 14, 2025
+
+DBE Goal: 15% participation required`
+          }
+        ]
+      },
+      'rfp-004': {
+        title: 'E-Commerce Platform Rebuild',
+        client: 'Outdoor Gear Collective',
+        sections: [
+          {
+            id: 'cover',
+            title: 'Cover Page',
+            type: 'cover',
+            content: `REQUEST FOR PROPOSAL
+
+E-Commerce Platform Modernization
+
+RFP Number: OGC-2024-ECOM-007
+Issue Date: November 5, 2024
+Due Date: December 15, 2024
+
+Outdoor Gear Collective
+8900 Mountain Vista Parkway
+Boulder, CO 80301`
+          },
+          {
+            id: 'exec-summary',
+            title: 'Executive Summary',
+            type: 'section',
+            content: `Outdoor Gear Collective (OGC) is a multi-brand outdoor recreation retailer seeking to rebuild our e-commerce platform to support aggressive growth targets.
+
+Current State:
+- $89M annual online revenue (47% of total)
+- 3 brands: TrailMaster, SummitPro, RiverRunner
+- Shopify Plus (reaching platform limits)
+- 240K active customers
+- 12,000 SKUs across brands
+
+Growth Targets:
+- $180M online revenue by 2027
+- International expansion (Canada, UK, EU)
+- B2B wholesale portal
+- Marketplace integration (REI, Backcountry)`
+          },
+          {
+            id: 'background',
+            title: 'Business Context',
+            type: 'section',
+            content: `Brand Portfolio:
+- TrailMaster: Hiking and camping (45% revenue)
+- SummitPro: Climbing and mountaineering (35% revenue)
+- RiverRunner: Kayaking and water sports (20% revenue)
+
+Current Challenges:
+- Single-tenant Shopify reaching 10K orders/hour limit
+- No unified customer view across brands
+- Manual inventory sync between warehouse and stores
+- Limited personalization capabilities
+- 3.2% cart abandonment above industry average
+
+Technology Debt:
+- 47 Shopify apps with integration conflicts
+- Custom checkout causing 12% mobile conversion drop
+- No headless architecture for omnichannel
+- Limited API capabilities for B2B
+
+Recent Investments:
+- Manhattan WMS implementation (2024)
+- Salesforce Marketing Cloud (2023)
+- New DC in Nevada (opens Q2 2025)`
+          },
+          {
+            id: 'scope',
+            title: 'Project Scope',
+            type: 'section',
+            content: `Platform Requirements:
+
+1. Commerce Engine
+- Multi-brand storefronts (shared backend)
+- Headless architecture (API-first)
+- Composable commerce capabilities
+- B2B and B2C support
+
+2. Customer Experience
+- Unified customer profiles
+- AI-powered recommendations
+- Advanced search and filtering
+- Mobile-first responsive design
+
+3. Operations Integration
+- Real-time inventory (Manhattan WMS)
+- Order management and routing
+- Returns and exchanges automation
+- Fraud prevention
+
+4. Marketing & Analytics
+- A/B testing framework
+- Customer segmentation
+- Attribution modeling
+- Real-time dashboards
+
+5. International Expansion
+- Multi-currency support
+- Localized content management
+- Tax and duty calculation
+- Regional fulfillment routing`
+          },
+          {
+            id: 'requirements',
+            title: 'Functional Requirements',
+            type: 'requirements',
+            requirements: [
+              { id: 'EC-001', priority: 'MUST', text: 'Platform MUST support 25,000 concurrent users during peak events' },
+              { id: 'EC-002', priority: 'MUST', text: 'System MUST provide sub-3-second page load times globally' },
+              { id: 'EC-003', priority: 'MUST', text: 'Solution MUST integrate with Manhattan WMS via real-time APIs' },
+              { id: 'EC-004', priority: 'MUST', text: 'Platform MUST support PCI-DSS Level 1 compliance' },
+              { id: 'EC-005', priority: 'SHALL', text: 'System SHALL provide headless CMS for content management' },
+              { id: 'EC-006', priority: 'SHALL', text: 'Platform SHALL support multiple payment providers (Stripe, PayPal, Affirm)' },
+              { id: 'EC-007', priority: 'SHALL', text: 'Solution SHALL include native mobile app capabilities (PWA minimum)' },
+              { id: 'EC-008', priority: 'SHOULD', text: 'Platform SHOULD include visual merchandising tools' },
+              { id: 'EC-009', priority: 'SHOULD', text: 'System SHOULD support live chat and video consultations' },
+              { id: 'EC-010', priority: 'SHOULD', text: 'Solution SHOULD provide carbon footprint tracking per order' },
+              { id: 'EC-011', priority: 'MAY', text: 'Platform MAY include AR product visualization' },
+              { id: 'EC-012', priority: 'MAY', text: 'System MAY support social commerce integration' }
+            ]
+          },
+          {
+            id: 'integration',
+            title: 'Integration Requirements',
+            type: 'requirements',
+            requirements: [
+              { id: 'INT-001', priority: 'MUST', text: 'Platform MUST integrate bidirectionally with Manhattan WMS' },
+              { id: 'INT-002', priority: 'MUST', text: 'Solution MUST sync with Salesforce Marketing Cloud' },
+              { id: 'INT-003', priority: 'MUST', text: 'System MUST connect to NetSuite ERP for financials' },
+              { id: 'INT-004', priority: 'SHALL', text: 'Platform SHALL integrate with Narvar for shipping experience' },
+              { id: 'INT-005', priority: 'SHALL', text: 'Solution SHALL support marketplace feeds (Amazon, REI)' },
+              { id: 'INT-006', priority: 'SHOULD', text: 'System SHOULD include CDP capabilities or integrate with existing' }
+            ]
+          },
+          {
+            id: 'timeline',
+            title: 'Project Timeline',
+            type: 'section',
+            content: `Target Milestones:
+
+Phase 1: Foundation (Q1 2025)
+- Platform selection and contracting
+- Architecture design
+- Development environment setup
+- Core commerce engine deployment
+
+Phase 2: Brand Migration (Q2 2025)
+- TrailMaster migration (largest brand)
+- Data migration and validation
+- Staff training
+- Soft launch
+
+Phase 3: Full Deployment (Q3 2025)
+- SummitPro and RiverRunner migration
+- International site launch (Canada)
+- B2B portal go-live
+- Legacy platform sunset
+
+Phase 4: Optimization (Q4 2025)
+- Performance optimization
+- Feature enhancement
+- UK/EU expansion preparation
+- Holiday readiness`
+          },
+          {
+            id: 'evaluation',
+            title: 'Selection Criteria',
+            type: 'section',
+            content: `Evaluation Weights:
+
+Platform Capabilities (30%)
+- Feature completeness
+- Scalability and performance
+- Mobile experience
+- Composability
+
+Implementation Partner (25%)
+- Outdoor/retail experience
+- Technical expertise
+- Project methodology
+- Team composition
+
+Total Cost of Ownership (25%)
+- Platform licensing
+- Implementation costs
+- Ongoing operational costs
+- Integration expenses
+
+Strategic Fit (20%)
+- Product roadmap alignment
+- Innovation approach
+- Partnership model
+- Reference quality`
+          },
+          {
+            id: 'submission',
+            title: 'Submission Requirements',
+            type: 'section',
+            content: `Proposal Delivery:
+Email to: rfp@outdoorgear.co
+CC: cto@outdoorgear.co
+
+Submission Components:
+1. Platform recommendation and rationale
+2. Technical architecture proposal
+3. Implementation plan and timeline
+4. Team bios and roles
+5. Detailed cost breakdown
+6. References (3 similar implementations)
+7. Live demo environment access
+
+Process Timeline:
+- Vendor Registration: November 12, 2024
+- Q&A Webinar: November 19, 2024
+- Proposals Due: December 15, 2024, 6:00 PM MST
+- Shortlist Notification: January 6, 2025
+- Platform Demonstrations: January 13-17, 2025
+- Final Selection: January 31, 2025
+- Contract Execution: February 15, 2025`
+          }
+        ]
+      },
+      'rfp-005': {
+        title: 'Cybersecurity Operations Center',
+        client: 'Meridian Energy Partners',
+        sections: [
+          {
+            id: 'cover',
+            title: 'Cover Page',
+            type: 'cover',
+            content: `REQUEST FOR PROPOSAL
+
+Security Operations Center (SOC) Services
+
+RFP Number: MEP-2024-SOC-031
+Issue Date: November 1, 2024
+Due Date: January 5, 2025
+Classification: Business Confidential
+
+Meridian Energy Partners
+4500 Energy Plaza
+Houston, TX 77002`
+          },
+          {
+            id: 'exec-summary',
+            title: 'Executive Summary',
+            type: 'section',
+            content: `Meridian Energy Partners (MEP) operates critical energy infrastructure across 14 states, including:
+- 3,200 miles of natural gas pipelines
+- 47 compressor stations
+- 12 processing plants
+- 89 metering stations
+
+We seek a qualified provider to establish and operate a 24/7 Security Operations Center (SOC) to protect our operational technology (OT) and information technology (IT) environments.
+
+Budget: $3.1M annually (3-year contract)
+Threat Landscape: Nation-state actors, ransomware groups, hacktivists
+Compliance: TSA Pipeline Security Directive, NERC CIP`
+          },
+          {
+            id: 'background',
+            title: 'Current Security Posture',
+            type: 'section',
+            content: `Existing Capabilities:
+- Splunk SIEM (limited OT visibility)
+- CrowdStrike EDR (IT endpoints only)
+- Nozomi Networks (pilot at 3 facilities)
+- Manual log review by internal team (5 FTE)
+- Third-party penetration testing (annual)
+
+Known Gaps:
+- No 24/7 monitoring capability
+- Limited OT/ICS security expertise
+- Incident response playbooks incomplete
+- Threat intelligence not operationalized
+- No deception technology deployed
+
+Recent Incidents:
+- Phishing campaign targeting operations (Q2 2024)
+- Anomalous traffic detected at compressor station (Q3 2024)
+- Third-party vendor compromise (contained)
+
+Regulatory Drivers:
+- TSA Pipeline Security Directive 2021-02C
+- DOE 100-day sprint recommendations
+- CISA Shields Up guidance`
+          },
+          {
+            id: 'scope',
+            title: 'Scope of Services',
+            type: 'section',
+            content: `Required SOC Capabilities:
+
+1. Continuous Monitoring (24/7/365)
+- IT network monitoring
+- OT/ICS environment monitoring
+- Cloud workload monitoring (Azure, AWS)
+- Identity and access monitoring
+
+2. Threat Detection & Response
+- Advanced threat detection (MITRE ATT&CK mapped)
+- Automated playbook execution
+- Threat hunting (proactive)
+- Incident triage and escalation
+
+3. Vulnerability Management
+- Continuous vulnerability scanning
+- Risk-based prioritization
+- Remediation tracking
+- OT-safe scanning protocols
+
+4. Threat Intelligence
+- Energy sector threat feeds
+- Dark web monitoring
+- Indicator operationalization
+- Threat briefings (weekly)
+
+5. Compliance Support
+- TSA directive evidence collection
+- NERC CIP audit support
+- Board-level reporting
+- Regulatory liaison`
+          },
+          {
+            id: 'requirements',
+            title: 'Technical Requirements',
+            type: 'requirements',
+            requirements: [
+              { id: 'SOC-001', priority: 'MUST', text: 'Provider MUST maintain SOC 2 Type II and ISO 27001 certifications' },
+              { id: 'SOC-002', priority: 'MUST', text: 'SOC MUST have dedicated OT/ICS security analysts (ICS-CERT qualified)' },
+              { id: 'SOC-003', priority: 'MUST', text: 'Mean time to detect (MTTD) MUST be under 15 minutes for critical alerts' },
+              { id: 'SOC-004', priority: 'MUST', text: 'Provider MUST support classified threat intelligence sharing (TSA)' },
+              { id: 'SOC-005', priority: 'MUST', text: 'All SOC personnel MUST be US citizens with background checks' },
+              { id: 'SOC-006', priority: 'SHALL', text: 'SOC SHALL integrate with existing Splunk and CrowdStrike investments' },
+              { id: 'SOC-007', priority: 'SHALL', text: 'Provider SHALL maintain on-site incident response capability within 4 hours' },
+              { id: 'SOC-008', priority: 'SHALL', text: 'System SHALL provide executive dashboards updated every 15 minutes' },
+              { id: 'SOC-009', priority: 'SHOULD', text: 'Provider SHOULD have energy sector SOC experience (minimum 3 clients)' },
+              { id: 'SOC-010', priority: 'SHOULD', text: 'SOC SHOULD include deception technology deployment and monitoring' },
+              { id: 'SOC-011', priority: 'SHOULD', text: 'Provider SHOULD offer tabletop exercises quarterly' },
+              { id: 'SOC-012', priority: 'MAY', text: 'SOC MAY be located in Texas (preferred for response times)' },
+              { id: 'SOC-013', priority: 'MAY', text: 'Provider MAY propose AI/ML-based detection enhancements' }
+            ]
+          },
+          {
+            id: 'sla',
+            title: 'Service Level Requirements',
+            type: 'requirements',
+            requirements: [
+              { id: 'SLA-001', priority: 'MUST', text: 'Critical incidents MUST receive response within 15 minutes' },
+              { id: 'SLA-002', priority: 'MUST', text: 'Platform availability MUST exceed 99.99% monthly' },
+              { id: 'SLA-003', priority: 'SHALL', text: 'High severity incidents SHALL be escalated within 30 minutes' },
+              { id: 'SLA-004', priority: 'SHALL', text: 'Monthly service reviews SHALL include root cause analysis' },
+              { id: 'SLA-005', priority: 'SHOULD', text: 'False positive rate SHOULD decrease 10% quarter-over-quarter' },
+              { id: 'SLA-006', priority: 'SHOULD', text: 'Mean time to contain (MTTC) SHOULD be under 4 hours' }
+            ]
+          },
+          {
+            id: 'staffing',
+            title: 'Staffing Requirements',
+            type: 'section',
+            content: `Minimum Team Composition:
+
+SOC Manager (Dedicated)
+- 10+ years security experience
+- Energy sector background preferred
+- CISSP, GICSP certifications
+
+OT Security Analysts (2 FTE dedicated)
+- ICS/SCADA experience required
+- GICSP, GRID, or equivalent
+- Pipeline/energy experience preferred
+
+IT Security Analysts (4 FTE shared)
+- GCIH, GCFE, or equivalent
+- Cloud security experience
+- Threat hunting capabilities
+
+Threat Intelligence Analyst (1 FTE shared)
+- Energy sector threat expertise
+- Dark web analysis skills
+- Intelligence report writing
+
+Incident Response Team
+- 4-hour on-site capability
+- Forensics expertise
+- OT-safe response procedures`
+          },
+          {
+            id: 'evaluation',
+            title: 'Evaluation Criteria',
+            type: 'section',
+            content: `Scoring Matrix (100 points):
+
+Technical Capabilities (35 points)
+- OT/ICS monitoring depth (15)
+- Detection and response capabilities (10)
+- Integration approach (5)
+- Innovation and automation (5)
+
+Team & Experience (30 points)
+- Energy sector experience (15)
+- Staff qualifications (10)
+- Retention and training (5)
+
+Operational Excellence (20 points)
+- SLA commitments (10)
+- Reporting and communication (5)
+- Continuous improvement (5)
+
+Cost Proposal (15 points)
+- Pricing competitiveness (8)
+- Value-added services (4)
+- Flexibility (3)
+
+Oral Presentations: Shortlisted vendors only`
+          },
+          {
+            id: 'submission',
+            title: 'Proposal Submission',
+            type: 'section',
+            content: `Secure Submission Portal: https://secure.meridianenergy.com/rfp
+
+Classification: Submit via encrypted channel only
+NDA Required: Execute before accessing detailed requirements
+
+Proposal Structure:
+Volume 1: Technical Approach (max 60 pages)
+Volume 2: Management Approach (max 30 pages)
+Volume 3: Past Performance (5 references, energy sector preferred)
+Volume 4: Cost Proposal (use provided template)
+Volume 5: Certifications and Compliance Evidence
+
+Critical Dates:
+- NDA Execution: November 8, 2024
+- Bidders Conference: November 15, 2024 (Houston, in-person)
+- Site Visit (optional): November 20-21, 2024
+- Questions Due: December 6, 2024
+- Final Q&A: December 13, 2024
+- Proposals Due: January 5, 2025, 2:00 PM CST
+- Orals: January 20-24, 2025
+- Selection: February 7, 2025
+- Contract Award: March 1, 2025
+
+Contact: ciso-office@meridianenergy.com (encrypted email required)`
+          }
+        ]
+      }
+    };
+
+
+    // LLM color coding for transparency visualization
+    const LLM_COLORS = {
+      claude: { name: 'Claude', bg: 'bg-sky-100', border: 'border-sky-500', text: 'text-sky-700', hex: '#0ea5e9' },
+      gpt4: { name: 'GPT-4', bg: 'bg-emerald-100', border: 'border-emerald-500', text: 'text-emerald-700', hex: '#10b981' },
+      grok: { name: 'Grok', bg: 'bg-violet-100', border: 'border-violet-500', text: 'text-violet-700', hex: '#8b5cf6' }
+    };
+
+    // RFP Viewer state
+    const rfpViewerState = {
+      rfp: null,
+      currentSection: 0,
+      parsedSections: [],
+      sectionEvaluations: {},
+      deliberationPhase: 'idle', // idle, parsing, evaluating, complete
+      models: {
+        claude: { status: 'idle', confidence: 0, vote: null },
+        gpt4: { status: 'idle', confidence: 0, vote: null },
+        grok: { status: 'idle', confidence: 0, vote: null }
+      }
+    };
+
+    function showRfpViewer() {
+      console.log('showRfpViewer called');
+      console.log('analyzeState.selectedRfp:', analyzeState.selectedRfp);
+      try {
+        if (!analyzeState.selectedRfp) {
+          alert('Please select an RFP first');
+          return;
+        }
+        rfpViewerState.rfp = analyzeState.selectedRfp;
+        const modal = document.getElementById('rfp-viewer-modal');
+        console.log('Modal element:', modal);
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+
+        // Reset state
+        rfpViewerState.currentSection = 0;
+        rfpViewerState.parsedSections = [];
+        rfpViewerState.sectionEvaluations = {};
+        rfpViewerState.deliberationPhase = 'idle';
+        Object.keys(rfpViewerState.models).forEach(m => {
+          rfpViewerState.models[m] = { status: 'idle', confidence: 0, vote: null };
+        });
+
+        console.log('About to call renderEnhancedRfpViewer');
+        renderEnhancedRfpViewer();
+        console.log('renderEnhancedRfpViewer completed');
+      } catch (err) {
+        console.error('Error in showRfpViewer:', err);
+        alert('Error opening RFP viewer: ' + err.message);
+      }
+    }
+
+    function hideRfpViewer() {
+      const modal = document.getElementById('rfp-viewer-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function renderEnhancedRfpViewer() {
+      const container = document.getElementById('rfp-viewer-content');
+      const rfp = rfpViewerState.rfp;
+      const doc = FULL_RFP_DOCUMENTS[rfp.id] || getDefaultRfpDocument(rfp);
+
+      container.innerHTML = `
+        <div class="flex h-full">
+          <!-- Left: Document View (60%) -->
+          <div class="w-3/5 border-r border-gray-200 flex flex-col">
+            <!-- Document Header -->
+            <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4zm-3 9v6h-2v-4H6v-2h6zm4 0v6h-2v-6h2zm4 0v6h-2v-6h2z"/>
+                </svg>
+                <span class="font-medium text-gray-700">${doc.title}</span>
+              </div>
+              <div class="flex items-center gap-2 text-sm text-gray-500">
+                <span>${doc.sections.length} sections</span>
+                <button onclick="startTransparentDeliberation()" class="ml-2 px-3 py-1 bg-atomic-500 text-white rounded-lg text-xs hover:bg-atomic-600 transition-colors">
+                  Start Analysis
+                </button>
+              </div>
+            </div>
+
+            <!-- Scrolling Document -->
+            <div id="rfp-document-scroll" class="flex-1 overflow-y-auto p-6 bg-gray-100">
+              <div class="max-w-2xl mx-auto space-y-4">
+                ${doc.sections.map((section, idx) => renderDocumentSection(section, idx)).join('')}
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Tribunal Panel (40%) -->
+          <div class="w-2/5 flex flex-col bg-gray-50">
+            <!-- Panel Header -->
+            <div class="px-4 py-3 border-b border-gray-200 bg-white">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold text-gray-900">LLM Tribunal</h3>
+                <div class="flex items-center gap-1 text-xs">
+                  <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                  </svg>
+                  <span class="text-emerald-600 font-medium">Transparent & Immutable</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Model Cards -->
+            <div class="p-4 space-y-3">
+              ${Object.keys(rfpViewerState.models).map(modelId => renderEnhancedModelCard(modelId)).join('')}
+            </div>
+
+            <!-- Agreement Matrix -->
+            <div class="px-4 pb-4">
+              ${renderAgreementMatrix()}
+            </div>
+
+            <!-- Consensus Panel -->
+            <div class="mt-auto border-t border-gray-200 bg-white p-4">
+              ${renderEnhancedConsensusPanel()}
+            </div>
+          </div>
+        </div>
+
+        <!-- LLM Legend Bar -->
+        <div class="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 flex items-center justify-between text-xs">
+          <div class="flex items-center gap-4">
+            <span class="text-gray-500">LLM Highlights:</span>
+            ${Object.entries(LLM_COLORS).map(([id, c]) => `
+              <div class="flex items-center gap-1">
+                <div class="w-3 h-3 rounded ${c.bg} border ${c.border}"></div>
+                <span class="${c.text}">${c.name}</span>
+              </div>
+            `).join('')}
+            <div class="flex items-center gap-1 ml-2 pl-2 border-l border-gray-300">
+              <div class="w-8 h-3 rounded bg-gradient-to-r from-sky-400 via-emerald-400 to-violet-400"></div>
+              <span class="text-gray-600">Full Consensus</span>
+            </div>
+          </div>
+          <div class="text-gray-400">Cryptographically verified analysis</div>
+        </div>
+      `;
+    }
+
+    function renderDocumentSection(section, idx) {
+      const isParsed = rfpViewerState.parsedSections.includes(idx);
+      const isCurrent = rfpViewerState.currentSection === idx && rfpViewerState.deliberationPhase === 'parsing';
+      const evaluation = rfpViewerState.sectionEvaluations[idx];
+
+      let borderClass = 'border-gray-200';
+      let ringClass = '';
+
+      if (isCurrent) {
+        ringClass = 'ring-2 ring-amber-400 ring-offset-2';
+      } else if (evaluation) {
+        const agreementCount = Object.values(evaluation).filter(e => e === 'positive').length;
+        if (agreementCount === 3) {
+          borderClass = 'border-transparent bg-gradient-to-r from-sky-50 via-emerald-50 to-violet-50';
+          ringClass = 'ring-1 ring-emerald-300';
+        } else if (agreementCount >= 2) {
+          borderClass = 'border-amber-300';
+        } else {
+          borderClass = 'border-red-300';
+        }
+      }
+
+      return `
+        <div id="section-${idx}" class="bg-white rounded-lg shadow-lg border ${borderClass} ${ringClass} transition-all duration-300">
+          <!-- Page Header -->
+          <div class="bg-gray-50 px-4 py-2 border-b border-gray-100 flex items-center justify-between rounded-t-lg">
+            <span class="text-xs font-medium text-gray-500">${section.title}</span>
+            <span class="text-xs text-gray-400">Page ${idx + 1}</span>
+          </div>
+
+          <!-- Page Content -->
+          <div class="p-6">
+            ${section.type === 'requirements' ? `
+              <div class="space-y-3">
+                ${section.requirements.map(req => renderRequirementItem(req, evaluation)).join('')}
+              </div>
+            ` : `
+              <div class="text-sm text-gray-700 whitespace-pre-line leading-relaxed">
+                ${section.content}
+              </div>
+            `}
+          </div>
+
+          <!-- Evaluation Indicators -->
+          ${evaluation ? `
+            <div class="px-4 py-2 border-t border-gray-100 bg-gray-50 rounded-b-lg">
+              ${renderSectionEvaluationIndicators(evaluation)}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderRequirementItem(req, evaluation) {
+      const priorityColors = {
+        'MUST': 'bg-red-100 text-red-700 border-red-200',
+        'SHALL': 'bg-orange-100 text-orange-700 border-orange-200',
+        'SHOULD': 'bg-yellow-100 text-yellow-700 border-yellow-200',
+        'MAY': 'bg-gray-100 text-gray-600 border-gray-200'
+      };
+
+      return `
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
+          <span class="px-2 py-0.5 text-xs font-medium rounded border ${priorityColors[req.priority] || priorityColors['MAY']}">
+            ${req.priority}
+          </span>
+          <div class="flex-1">
+            <span class="text-xs text-gray-400">${req.id}</span>
+            <p class="text-sm text-gray-700">${req.text}</p>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSectionEvaluationIndicators(evaluation) {
+      return `
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-gray-500">Evaluated by:</span>
+          ${Object.entries(evaluation).map(([model, result]) => {
+            const color = LLM_COLORS[model];
+            const icon = result === 'positive' ?
+              '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>' :
+              result === 'negative' ?
+              '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>' :
+              '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>';
+            return `
+              <div class="flex items-center gap-1 px-2 py-1 rounded ${color.bg}">
+                <svg class="w-3 h-3 ${color.text}" fill="none" stroke="currentColor" viewBox="0 0 24 24">${icon}</svg>
+                <span class="${color.text}">${color.name}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    function renderEnhancedModelCard(modelId) {
+      const model = rfpViewerState.models[modelId];
+      const color = LLM_COLORS[modelId];
+
+      const statusIndicator = model.status === 'thinking' ?
+        `<div class="flex items-center gap-1">
+          <div class="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></div>
+          <span class="text-amber-600 text-xs">Analyzing...</span>
+        </div>` :
+        model.status === 'complete' ?
+        `<div class="flex items-center gap-1">
+          <div class="w-2 h-2 bg-emerald-500 rounded-full"></div>
+          <span class="text-emerald-600 text-xs">${model.confidence}% confident</span>
+        </div>` :
+        `<div class="flex items-center gap-1">
+          <div class="w-2 h-2 bg-gray-300 rounded-full"></div>
+          <span class="text-gray-400 text-xs">Waiting</span>
+        </div>`;
+
+      return `
+        <div class="bg-white rounded-lg border-2 ${model.status === 'complete' ? color.border : 'border-gray-200'} p-3 transition-all duration-300">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-lg ${color.bg} flex items-center justify-center">
+                <span class="${color.text} text-xs font-bold">${color.name.charAt(0)}</span>
+              </div>
+              <span class="font-medium text-gray-900">${color.name}</span>
+            </div>
+            ${statusIndicator}
+          </div>
+          ${model.vote ? `
+            <div class="mt-2 p-2 rounded ${
+              model.vote === 'BID' || model.vote === 'STRONG_BID' ? 'bg-emerald-50 text-emerald-700' :
+              model.vote === 'NO_BID' ? 'bg-red-50 text-red-700' :
+              'bg-amber-50 text-amber-700'
+            } text-sm font-medium text-center">
+              ${model.vote.replace('_', ' ')}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderAgreementMatrix() {
+      const models = rfpViewerState.models;
+      const votes = Object.values(models).filter(m => m.vote).map(m => m.vote);
+
+      if (votes.length === 0) {
+        return `
+          <div class="bg-white rounded-lg border border-gray-200 p-4 text-center text-sm text-gray-500">
+            Agreement matrix will appear after analysis
+          </div>
+        `;
+      }
+
+      const uniqueVotes = [...new Set(votes)];
+      const fullAgreement = uniqueVotes.length === 1 && votes.length === 3;
+      const partialAgreement = uniqueVotes.length === 2 && votes.length >= 2;
+
+      return `
+        <div class="bg-white rounded-lg border border-gray-200 p-4">
+          <h4 class="text-sm font-medium text-gray-700 mb-3">Agreement Matrix</h4>
+          <div class="space-y-2">
+            ${fullAgreement ? `
+              <div class="flex items-center gap-2">
+                <div class="flex-1 h-2 rounded-full bg-gradient-to-r from-sky-400 via-emerald-400 to-violet-400"></div>
+                <span class="text-xs text-emerald-600 font-medium">Full Agreement (3/3)</span>
+              </div>
+            ` : partialAgreement ? `
+              <div class="flex items-center gap-2">
+                <div class="flex-1 h-2 rounded-full bg-amber-400"></div>
+                <span class="text-xs text-amber-600 font-medium">Partial (2/3)</span>
+              </div>
+            ` : `
+              <div class="flex items-center gap-2">
+                <div class="flex-1 h-2 rounded-full bg-red-400"></div>
+                <span class="text-xs text-red-600 font-medium">Divergence</span>
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEnhancedConsensusPanel() {
+      const models = rfpViewerState.models;
+      const allComplete = Object.values(models).every(m => m.status === 'complete');
+
+      if (!allComplete) {
+        return `
+          <div class="text-center text-gray-500 text-sm">
+            Consensus will form after all models complete analysis
+          </div>
+        `;
+      }
+
+      const votes = Object.values(models).map(m => m.vote);
+      const bidVotes = votes.filter(v => v === 'BID' || v === 'STRONG_BID').length;
+      const consensus = bidVotes >= 2 ? 'BID' : bidVotes === 1 ? 'CONDITIONAL' : 'NO_BID';
+
+      return `
+        <div class="text-center">
+          <div class="text-xs text-gray-500 mb-1">Tribunal Consensus</div>
+          <div class="text-2xl font-bold ${
+            consensus === 'BID' ? 'text-emerald-600' :
+            consensus === 'NO_BID' ? 'text-red-600' :
+            'text-amber-600'
+          }">
+            ${consensus.replace('_', ' ')}
+          </div>
+          <div class="mt-2 text-xs text-gray-400">
+            ${bidVotes}/3 models recommend bidding
+          </div>
+        </div>
+      `;
+    }
+
+    async function startTransparentDeliberation() {
+      const doc = FULL_RFP_DOCUMENTS[rfpViewerState.rfp.id] || getDefaultRfpDocument(rfpViewerState.rfp);
+
+      // Phase 1: Parse sections
+      rfpViewerState.deliberationPhase = 'parsing';
+
+      for (let i = 0; i < doc.sections.length; i++) {
+        rfpViewerState.currentSection = i;
+        renderEnhancedRfpViewer();
+
+        // Scroll to current section
+        const sectionEl = document.getElementById(`section-${i}`);
+        if (sectionEl) {
+          sectionEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        await new Promise(r => setTimeout(r, 800));
+        rfpViewerState.parsedSections.push(i);
+
+        // Simulate LLM evaluation of section
+        rfpViewerState.sectionEvaluations[i] = {
+          claude: Math.random() > 0.2 ? 'positive' : 'neutral',
+          gpt4: Math.random() > 0.25 ? 'positive' : 'neutral',
+          grok: Math.random() > 0.3 ? 'positive' : 'neutral'
+        };
+
+        renderEnhancedRfpViewer();
+      }
+
+      // Phase 2: Model deliberation
+      rfpViewerState.deliberationPhase = 'evaluating';
+
+      const modelOrder = ['claude', 'gpt4', 'grok'];
+      for (const modelId of modelOrder) {
+        rfpViewerState.models[modelId].status = 'thinking';
+        renderEnhancedRfpViewer();
+
+        await new Promise(r => setTimeout(r, 1500 + Math.random() * 1000));
+
+        const votes = ['BID', 'STRONG_BID', 'CONDITIONAL', 'NO_BID'];
+        rfpViewerState.models[modelId].status = 'complete';
+        rfpViewerState.models[modelId].confidence = 70 + Math.floor(Math.random() * 25);
+        rfpViewerState.models[modelId].vote = votes[Math.floor(Math.random() * 3)]; // Bias toward BID
+
+        renderEnhancedRfpViewer();
+      }
+
+      rfpViewerState.deliberationPhase = 'complete';
+      renderEnhancedRfpViewer();
+    }
+
+    function getDefaultRfpDocument(rfp) {
+      return {
+        title: rfp.name,
+        client: rfp.client,
+        sections: [
+          { id: 'cover', title: 'Cover Page', type: 'cover', content: `REQUEST FOR PROPOSAL
+
+${rfp.name}
+
+Client: ${rfp.client}
+Value: ${rfp.value || 'TBD'}` },
+          { id: 'summary', title: 'Executive Summary', type: 'section', content: rfp.description || 'No description available.' },
+          { id: 'requirements', title: 'Requirements', type: 'requirements', requirements: (rfp.requirements || []).map((r, i) => ({ id: `REQ-${i+1}`, priority: 'MUST', text: r.text || r })) }
+        ]
+      };
+    }
+
+
+  </script>
+</body>
+</html>
