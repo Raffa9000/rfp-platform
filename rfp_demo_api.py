@@ -990,6 +990,16 @@ async def demo():
     return "<h1>Demo UI not found. Run the API and access /demo</h1>"
 
 
+@app.get("/studio", response_class=HTMLResponse)
+async def governance_studio():
+    """Serve the Atomic Governance Studio."""
+    html_path = os.path.join(os.path.dirname(__file__), "governance-studio.html")
+    if os.path.exists(html_path):
+        with open(html_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    return "<h1>Governance Studio not found</h1>"
+
+
 if __name__ == "__main__":
     import uvicorn
     print("\n" + "="*60)
