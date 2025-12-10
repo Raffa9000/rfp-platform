@@ -31,9 +31,31 @@ import httpx
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# SIMULATION MODE - Set to True for demo without real API calls
+SIMULATION_MODE = True
+
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 XAI_API_KEY = os.getenv("XAI_API_KEY", "")
+
+# Mock LLM responses for simulation mode
+MOCK_RESPONSES = {
+    "claude": {
+        "verdict": "BID",
+        "confidence": 0.87,
+        "rationale": "Strong technical alignment with our cloud migration expertise. The healthcare compliance requirements (HIPAA) match our proven track record. Key strengths: microservices architecture experience, established Azure partnership, and dedicated DevSecOps team. Risk factors are manageable with proper resource allocation. Recommend pursuing with emphasis on security credentials."
+    },
+    "gpt4": {
+        "verdict": "STRONG_BID",
+        "confidence": 0.92,
+        "rationale": "Excellent opportunity alignment. Our capabilities exceed 85% of stated requirements. The budget is well within our typical engagement range, and the timeline is achievable with our standard methodology. Competitive advantage: our proprietary migration framework reduces deployment risk by 40%. Strong recommendation to bid with premium pricing tier."
+    },
+    "grok": {
+        "verdict": "BID",
+        "confidence": 0.78,
+        "rationale": "Solid fit with moderate complexity. Technical requirements align well, though legacy system integration presents some challenges. Our team has relevant experience but may need to augment with specialized consultants. The compliance matrix is demanding but achievable. Suggest bidding with contingency provisions."
+    }
+}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SAMPLE RFPs
@@ -512,10 +534,11 @@ async def root():
         "service": "RFP Intelligence Platform",
         "version": "2.0.0 - Live Demo",
         "llm_status": {
-            "claude": "configured" if ANTHROPIC_API_KEY else "not configured",
-            "gpt4": "configured" if OPENAI_API_KEY else "not configured",
-            "grok": "configured" if XAI_API_KEY else "not configured"
+            "claude": "simulated" if SIMULATION_MODE else ("configured" if ANTHROPIC_API_KEY else "not configured"),
+            "gpt4": "simulated" if SIMULATION_MODE else ("configured" if OPENAI_API_KEY else "not configured"),
+            "grok": "simulated" if SIMULATION_MODE else ("configured" if XAI_API_KEY else "not configured")
         },
+        "simulation_mode": SIMULATION_MODE,
         "sample_rfps": len(SAMPLE_RFPS),
         "capabilities": len(CAPABILITIES)
     }
@@ -665,47 +688,80 @@ Provide your BID or NO BID recommendation with key reasoning.
 
         votes = []
 
-        # Vote 1: Claude
-        yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'voting', 'model': 'claude-sonnet-4', 'status': 'thinking'})}\n\n"
-        claude_result = await call_claude(analysis_prompt, system_prompt)
-        if claude_result.get("success"):
-            vote = parse_vote(claude_result["response"])
-            vote["model"] = "claude-sonnet-4"
-            vote["raw_response"] = claude_result["response"]
+        if SIMULATION_MODE:
+            # SIMULATION MODE - Use mock responses
+            # Vote 1: Claude (simulated)
+            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'voting', 'model': 'claude-sonnet-4', 'status': 'thinking'})}\n\n"
+            await asyncio.sleep(1.2)
+            mock = MOCK_RESPONSES["claude"]
+            vote = {"model": "claude-sonnet-4", "verdict": mock["verdict"], "confidence": mock["confidence"], "rationale": mock["rationale"], "raw_response": mock["rationale"]}
             votes.append(vote)
             yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'vote', 'vote': vote})}\n\n"
-        else:
-            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'claude-sonnet-4', 'error': sanitize_error(str(claude_result.get('error', 'Unknown error')))})}\n\n"
 
-        await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
-        # Vote 2: GPT-4
-        yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'voting', 'model': 'gpt-4o', 'status': 'thinking'})}\n\n"
-        gpt_result = await call_openai(analysis_prompt, system_prompt)
-        if gpt_result.get("success"):
-            vote = parse_vote(gpt_result["response"])
-            vote["model"] = "gpt-4o"
-            vote["raw_response"] = gpt_result["response"]
+            # Vote 2: GPT-4 (simulated)
+            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'voting', 'model': 'gpt-4o', 'status': 'thinking'})}\n\n"
+            await asyncio.sleep(1.0)
+            mock = MOCK_RESPONSES["gpt4"]
+            vote = {"model": "gpt-4o", "verdict": mock["verdict"], "confidence": mock["confidence"], "rationale": mock["rationale"], "raw_response": mock["rationale"]}
             votes.append(vote)
             yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'vote', 'vote': vote})}\n\n"
-        else:
-            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'gpt-4o', 'error': sanitize_error(str(gpt_result.get('error', 'Unknown error')))})}\n\n"
 
-        await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
-        # Vote 3: Grok
-        yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'voting', 'model': 'grok-2', 'status': 'thinking'})}\n\n"
-        grok_result = await call_grok(analysis_prompt, system_prompt)
-        if grok_result.get("success"):
-            vote = parse_vote(grok_result["response"])
-            vote["model"] = "grok-2"
-            vote["raw_response"] = grok_result["response"]
+            # Vote 3: Grok (simulated)
+            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'voting', 'model': 'grok-2', 'status': 'thinking'})}\n\n"
+            await asyncio.sleep(0.8)
+            mock = MOCK_RESPONSES["grok"]
+            vote = {"model": "grok-2", "verdict": mock["verdict"], "confidence": mock["confidence"], "rationale": mock["rationale"], "raw_response": mock["rationale"]}
             votes.append(vote)
             yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'vote', 'vote': vote})}\n\n"
-        else:
-            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'grok-2', 'error': sanitize_error(str(grok_result.get('error', 'Unknown error')))})}\n\n"
 
-        await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)
+        else:
+            # LIVE MODE - Call real LLM APIs
+            # Vote 1: Claude
+            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'voting', 'model': 'claude-sonnet-4', 'status': 'thinking'})}\n\n"
+            claude_result = await call_claude(analysis_prompt, system_prompt)
+            if claude_result.get("success"):
+                vote = parse_vote(claude_result["response"])
+                vote["model"] = "claude-sonnet-4"
+                vote["raw_response"] = claude_result["response"]
+                votes.append(vote)
+                yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'vote', 'vote': vote})}\n\n"
+            else:
+                yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'claude-sonnet-4', 'error': sanitize_error(str(claude_result.get('error', 'Unknown error')))})}\n\n"
+
+            await asyncio.sleep(0.3)
+
+            # Vote 2: GPT-4
+            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'voting', 'model': 'gpt-4o', 'status': 'thinking'})}\n\n"
+            gpt_result = await call_openai(analysis_prompt, system_prompt)
+            if gpt_result.get("success"):
+                vote = parse_vote(gpt_result["response"])
+                vote["model"] = "gpt-4o"
+                vote["raw_response"] = gpt_result["response"]
+                votes.append(vote)
+                yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'vote', 'vote': vote})}\n\n"
+            else:
+                yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'gpt-4o', 'error': sanitize_error(str(gpt_result.get('error', 'Unknown error')))})}\n\n"
+
+            await asyncio.sleep(0.3)
+
+            # Vote 3: Grok
+            yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'voting', 'model': 'grok-2', 'status': 'thinking'})}\n\n"
+            grok_result = await call_grok(analysis_prompt, system_prompt)
+            if grok_result.get("success"):
+                vote = parse_vote(grok_result["response"])
+                vote["model"] = "grok-2"
+                vote["raw_response"] = grok_result["response"]
+                votes.append(vote)
+                yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'vote', 'vote': vote})}\n\n"
+            else:
+                yield f"data: {json.dumps({'phase': 'tribunal', 'step': 'error', 'model': 'grok-2', 'error': sanitize_error(str(grok_result.get('error', 'Unknown error')))})}\n\n"
+
+            await asyncio.sleep(0.5)
 
         # Phase 4: Consensus Calculation
         yield f"data: {json.dumps({'phase': 'consensus', 'step': 'start', 'message': 'Calculating tribunal consensus...'})}\n\n"
